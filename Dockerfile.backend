@@ -1,0 +1,36 @@
+# API Backend Only - Lightweight container for Kubernetes operations using official JS client
+FROM public.ecr.aws/docker/library/node:18-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install only backend dependencies
+RUN npm ci --only=production
+
+# Install curl for health checks
+RUN apk add --no-cache curl
+
+# Copy backend source and shared services
+COPY src/backend/ ./src/backend/
+COPY src/shared/ ./src/shared/
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S kubamf -u 1001
+
+# Change ownership
+RUN chown -R kubamf:nodejs /app
+
+USER kubamf
+
+EXPOSE 3001
+
+ENV NODE_ENV=production
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3001/api/kubeconfig/contexts || exit 1
+
+CMD ["node", "src/backend/server.js"]

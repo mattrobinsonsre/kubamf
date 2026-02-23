@@ -1,0 +1,511 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0)'
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '18'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  validate-tag:
+    name: Validate Release Tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+            TAG_NAME="$VERSION"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+            TAG_NAME="$VERSION"
+          fi
+
+          # Validate version format (v1.2.3 or v1.2.3-beta.1)
+          if [[ ! $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
+            echo "❌ Invalid version format: $VERSION"
+            echo "Expected format: v1.2.3 or v1.2.3-beta.1"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "✅ Valid version: $VERSION"
+
+  check-existing-release:
+    name: Check Existing Release
+    runs-on: ubuntu-latest
+    needs: validate-tag
+    steps:
+      - name: Check if release already exists
+        id: check-release
+        uses: actions/github-script@v6
+        with:
+          script: |
+            try {
+              const release = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: '${{ needs.validate-tag.outputs.tag_name }}'
+              });
+
+              if (release.data) {
+                core.setFailed(`❌ Release ${{ needs.validate-tag.outputs.tag_name }} already exists!`);
+              } else {
+                console.log('✅ Release does not exist, proceeding...');
+              }
+            } catch (error) {
+              if (error.status === 404) {
+                console.log('✅ Release does not exist, proceeding...');
+              } else {
+                throw error;
+              }
+            }
+
+  build-and-test:
+    name: Build and Test for Release
+    runs-on: ubuntu-latest
+    needs: [validate-tag, check-existing-release]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install librsvg for icon generation
+        run: sudo apt-get update && sudo apt-get install -y librsvg2-bin
+
+      - name: Run tests with heavy parallelism
+        run: npm run test:parallel
+        env:
+          CI: true
+
+      - name: Build application
+        run: |
+          npm run build:frontend
+          npm run build:frontend:static
+          npm run build:backend
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-build-${{ needs.validate-tag.outputs.version }}
+          path: |
+            dist/
+            dist-static/
+          retention-days: 30
+
+  build-electron-linux:
+    name: Build Electron (Linux)
+    runs-on: ubuntu-latest
+    needs: [validate-tag, build-and-test]
+    strategy:
+      matrix:
+        arch: [x64, arm64, armv7l]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm snapd
+
+      - name: Build frontend and backend
+        run: |
+          npm run build:frontend
+          npm run build:backend
+
+      - name: Build Electron Linux packages
+        env:
+          USE_SYSTEM_7ZA: true
+        run: |
+          npm run electron:pack -- --linux --${{ matrix.arch }}
+
+      - name: Upload Linux Electron artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: electron-linux-${{ matrix.arch }}-${{ needs.validate-tag.outputs.version }}
+          path: |
+            dist-electron/*.deb
+            dist-electron/*.rpm
+            dist-electron/*.AppImage
+            dist-electron/*.snap
+            dist-electron/*.tar.gz
+          retention-days: 30
+
+  build-electron-windows:
+    name: Build Electron (Windows)
+    runs-on: windows-latest
+    needs: [validate-tag, build-and-test]
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend and backend
+        run: |
+          npm run build:frontend
+          npm run build:backend
+
+      - name: Build Electron Windows packages
+        run: |
+          npm run electron:pack -- --win --${{ matrix.arch }}
+
+      - name: Upload Windows Electron artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: electron-windows-${{ matrix.arch }}-${{ needs.validate-tag.outputs.version }}
+          path: |
+            dist-electron/*.exe
+            dist-electron/*.zip
+          retention-days: 30
+
+  build-electron-macos:
+    name: Build Electron (macOS)
+    runs-on: macos-latest
+    needs: [validate-tag, build-and-test]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend and backend
+        run: |
+          npm run build:frontend
+          npm run build:backend
+
+      - name: Build Electron macOS packages
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: |
+          npm run electron:pack -- --mac --universal
+
+      - name: Upload macOS Electron artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: electron-macos-universal-${{ needs.validate-tag.outputs.version }}
+          path: |
+            dist-electron/*.dmg
+            dist-electron/*.zip
+          retention-days: 30
+
+  publish-docker-images:
+    name: Publish Docker Images
+    runs-on: ubuntu-latest
+    needs: [validate-tag, build-and-test]
+    strategy:
+      matrix:
+        component: [backend, frontend]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: release-build-${{ needs.validate-tag.outputs.version }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.component }}
+          tags: |
+            type=raw,value=${{ needs.validate-tag.outputs.version }}
+            type=raw,value=latest
+            type=semver,pattern={{version}},value=${{ needs.validate-tag.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.validate-tag.outputs.version }}
+            type=semver,pattern={{major}},value=${{ needs.validate-tag.outputs.version }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.${{ matrix.component }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  publish-helm-chart:
+    name: Publish Helm Chart
+    runs-on: ubuntu-latest
+    needs: [validate-tag, publish-docker-images]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.12.0'
+
+      - name: Configure Git for Helm
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Update Helm chart version and image tags
+        run: |
+          VERSION="${{ needs.validate-tag.outputs.version }}"
+          CHART_VERSION=${VERSION#v}  # Remove 'v' prefix
+
+          # Update Chart.yaml
+          sed -i "s/^version:.*/version: $CHART_VERSION/" charts/kubamf/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"$VERSION\"/" charts/kubamf/Chart.yaml
+
+          # Update values.yaml with release tag
+          sed -i "s/tag:.*/tag: \"$VERSION\"/" charts/kubamf/values.yaml
+
+          echo "📝 Updated Helm chart to version $CHART_VERSION with image tag $VERSION"
+
+      - name: Lint Helm chart
+        run: helm lint charts/kubamf
+
+      - name: Package Helm chart
+        run: |
+          helm package charts/kubamf --destination ./helm-packages
+          echo "📦 Packaged Helm chart:"
+          ls -la helm-packages/
+
+      - name: Publish Helm chart to GitHub Packages
+        run: |
+          CHART_PACKAGE=$(ls helm-packages/*.tgz)
+          echo "🚀 Publishing $CHART_PACKAGE"
+
+          helm registry login ${{ env.REGISTRY }} -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
+          helm push $CHART_PACKAGE oci://${{ env.REGISTRY }}/${{ github.repository }}/charts
+
+          echo "✅ Helm chart published successfully"
+
+  create-github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [validate-tag, publish-docker-images, publish-helm-chart, build-electron-linux, build-electron-windows, build-electron-macos]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all Electron artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: electron-artifacts
+
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          VERSION="${{ needs.validate-tag.outputs.version }}"
+          CHART_VERSION=${VERSION#v}
+
+          cat > release-notes.md << EOF
+          ## 🚀 Release $VERSION
+
+          This release includes desktop applications, container images, and Helm charts.
+
+          ### 🖥️ Desktop Applications
+
+          **Windows:**
+          - \`Kubamf-${VERSION#v}-x64.exe\` - Windows installer (64-bit)
+          - \`Kubamf-${VERSION#v}-arm64.exe\` - Windows installer (ARM64)
+
+          **macOS:**
+          - \`Kubamf-${VERSION#v}-universal.dmg\` - macOS installer (Universal - Intel & Apple Silicon)
+
+          **Linux:**
+          - \`Kubamf-${VERSION#v}-x64.AppImage\` - Universal Linux (64-bit)
+          - \`Kubamf-${VERSION#v}-arm64.AppImage\` - Universal Linux (ARM64)
+          - \`Kubamf-${VERSION#v}-armv7l.AppImage\` - Universal Linux (ARMv7)
+          - \`.deb\` packages - Debian/Ubuntu
+          - \`.rpm\` packages - Fedora/RHEL
+          - \`.snap\` packages - Snap Store
+          - \`.tar.gz\` archives - Generic Linux
+
+          ### 📦 Container Images
+
+          **Backend:**
+          \`\`\`bash
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:$VERSION
+          \`\`\`
+
+          **Frontend:**
+          \`\`\`bash
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:$VERSION
+          \`\`\`
+
+          ### ⚓ Helm Chart
+
+          **Install:**
+          \`\`\`bash
+          helm install kubamf oci://${{ env.REGISTRY }}/${{ github.repository }}/charts/kubamf --version $CHART_VERSION
+          \`\`\`
+
+          **Upgrade:**
+          \`\`\`bash
+          helm upgrade kubamf oci://${{ env.REGISTRY }}/${{ github.repository }}/charts/kubamf --version $CHART_VERSION
+          \`\`\`
+
+          ### 🐳 Docker Compose
+
+          \`\`\`yaml
+          version: '3.8'
+          services:
+            kubamf-backend:
+              image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:$VERSION
+              ports:
+                - "3001:3001"
+
+            kubamf-frontend:
+              image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:$VERSION
+              ports:
+                - "80:80"
+              depends_on:
+                - kubamf-backend
+          \`\`\`
+
+          ### 🏷️ Available Tags
+
+          - \`$VERSION\` - This specific release
+          - \`latest\` - Latest stable release
+          - \`${VERSION%.*}\` - Major.minor version (if semantic versioning)
+          - \`${VERSION%%.*}\` - Major version (if semantic versioning)
+
+          ---
+
+          **Full Changelog:** https://github.com/${{ github.repository }}/compare/$(git describe --tags --abbrev=0 HEAD^)...$VERSION
+          EOF
+
+      - name: Create GitHub Release with assets
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.validate-tag.outputs.tag_name }}
+          name: ${{ needs.validate-tag.outputs.version }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: ${{ contains(needs.validate-tag.outputs.version, '-') }}
+          files: |
+            electron-artifacts/**/*.deb
+            electron-artifacts/**/*.rpm
+            electron-artifacts/**/*.AppImage
+            electron-artifacts/**/*.snap
+            electron-artifacts/**/*.tar.gz
+            electron-artifacts/**/*.exe
+            electron-artifacts/**/*.zip
+            electron-artifacts/**/*.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  verify-release:
+    name: Verify Release
+    runs-on: ubuntu-latest
+    needs: [validate-tag, create-github-release]
+    steps:
+      - name: Verify Docker images
+        run: |
+          VERSION="${{ needs.validate-tag.outputs.version }}"
+
+          echo "🔍 Verifying Docker images..."
+
+          # Check if images exist and are pullable
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:$VERSION
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:$VERSION
+
+          echo "✅ All Docker images verified successfully"
+
+      - name: Verify Helm chart
+        run: |
+          VERSION="${{ needs.validate-tag.outputs.version }}"
+          CHART_VERSION=${VERSION#v}
+
+          echo "🔍 Verifying Helm chart..."
+
+          # Login to registry
+          echo ${{ secrets.GITHUB_TOKEN }} | helm registry login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+
+          # Pull and verify chart
+          helm pull oci://${{ env.REGISTRY }}/${{ github.repository }}/charts/kubamf --version $CHART_VERSION
+
+          echo "✅ Helm chart verified successfully"
+
+  post-release-notification:
+    name: Post-Release Notification
+    runs-on: ubuntu-latest
+    needs: [validate-tag, verify-release]
+    if: always() && needs.verify-release.result == 'success'
+    steps:
+      - name: Notify successful release
+        run: |
+          VERSION="${{ needs.validate-tag.outputs.version }}"
+          echo "🎉 Release $VERSION completed successfully!"
+          echo ""
+          echo "📦 Published artifacts:"
+          echo "  • Docker images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-{backend,frontend}:$VERSION"
+          echo "  • Helm chart: oci://${{ env.REGISTRY }}/${{ github.repository }}/charts/kubamf"
+          echo "  • GitHub release: https://github.com/${{ github.repository }}/releases/tag/$VERSION"
+          echo ""
+          echo "🚀 Ready for deployment!"

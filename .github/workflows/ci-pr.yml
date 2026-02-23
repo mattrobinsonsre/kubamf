@@ -1,0 +1,396 @@
+name: CI - Pull Request
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+
+concurrency:
+  group: ci-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '18'
+  CACHE_VERSION: 'v1'
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.changes.outputs.frontend }}
+      backend: ${{ steps.changes.outputs.backend }}
+      docker: ${{ steps.changes.outputs.docker }}
+      helm: ${{ steps.changes.outputs.helm }}
+      tests: ${{ steps.changes.outputs.tests }}
+      workflows: ${{ steps.changes.outputs.workflows }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for changes
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            frontend:
+              - 'src/**/*.jsx'
+              - 'src/**/*.js'
+              - 'src/**/*.css'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'vite.config.js'
+              - 'tailwind.config.js'
+              - 'postcss.config.js'
+            backend:
+              - 'src/backend/**'
+              - 'package.json'
+              - 'package-lock.json'
+            docker:
+              - 'Dockerfile*'
+              - 'docker-compose*'
+              - '.dockerignore'
+            helm:
+              - 'charts/**'
+            tests:
+              - 'src/**/*.test.js'
+              - 'src/**/*.test.jsx'
+              - 'tests/**'
+              - 'jest.config.js'
+              - 'vitest.config.js'
+              - 'scripts/test-parallel.js'
+            workflows:
+              - '.github/workflows/**'
+
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Cache node_modules
+        id: cache-node-modules
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: node-modules-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Lint backend
+        if: needs.changes.outputs.backend == 'true'
+        run: npm run lint:backend
+
+      - name: Lint frontend
+        if: needs.changes.outputs.frontend == 'true'
+        run: npm run lint:frontend
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.tests == 'true'
+    strategy:
+      matrix:
+        test-suite: [backend, frontend]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Cache node_modules
+        id: cache-node-modules
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: node-modules-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Cache test results
+        id: cache-test-results
+        uses: actions/cache@v3
+        with:
+          path: |
+            coverage/${{ matrix.test-suite }}
+            test-results-${{ matrix.test-suite }}.json
+          key: test-results-${{ env.CACHE_VERSION }}-${{ matrix.test-suite }}-${{ runner.os }}-${{ hashFiles('src/**', 'package-lock.json') }}
+
+      - name: Run ${{ matrix.test-suite }} tests
+        if: steps.cache-test-results.outputs.cache-hit != 'true' || github.event_name == 'pull_request'
+        run: |
+          if [ "${{ matrix.test-suite }}" = "backend" ]; then
+            npm run test:backend -- --maxWorkers=2 --coverage --coverageReporters=json-summary --coverageDirectory=coverage/backend
+          else
+            npm run test:frontend -- --coverage --coverage.reporter=json-summary --coverage.reportsDirectory=coverage/frontend --pool.threads.maxThreads=2
+          fi
+        env:
+          CI: true
+
+      - name: Upload coverage to Codecov
+        if: steps.cache-test-results.outputs.cache-hit != 'true' || github.event_name == 'pull_request'
+        uses: codecov/codecov-action@v3
+        with:
+          directory: coverage/${{ matrix.test-suite }}
+          flags: ${{ matrix.test-suite }}
+          name: ${{ matrix.test-suite }}-coverage
+
+  test-parallel:
+    name: Parallel Test Run
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.tests == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Cache node_modules
+        id: cache-node-modules
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: node-modules-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Run parallel tests
+        run: npm run test:parallel
+        env:
+          CI: true
+
+      - name: Upload combined coverage
+        uses: codecov/codecov-action@v3
+        with:
+          directory: coverage
+          flags: combined
+          name: combined-coverage
+
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Cache node_modules
+        id: cache-node-modules
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: node-modules-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Install librsvg for icon generation
+        run: sudo apt-get update && sudo apt-get install -y librsvg2-bin
+
+      - name: Cache build output
+        id: cache-build
+        uses: actions/cache@v3
+        with:
+          path: |
+            dist
+            dist-static
+          key: build-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ hashFiles('src/**', 'package.json', 'vite.config.js') }}
+
+      - name: Build frontend
+        if: steps.cache-build.outputs.cache-hit != 'true'
+        run: npm run build:frontend
+
+      - name: Build frontend (static)
+        if: steps.cache-build.outputs.cache-hit != 'true'
+        run: npm run build:frontend:static
+
+      - name: Build backend
+        if: steps.cache-build.outputs.cache-hit != 'true'
+        run: npm run build:backend
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-artifacts-${{ github.sha }}
+          path: |
+            dist/
+            dist-static/
+          retention-days: 1
+
+  docker-build:
+    name: Test Docker Build
+    runs-on: ubuntu-latest
+    needs: [changes, build]
+    if: needs.changes.outputs.docker == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true'
+    strategy:
+      matrix:
+        dockerfile: [Dockerfile.backend, Dockerfile.frontend]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: build-artifacts-${{ github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  helm-lint:
+    name: Lint Helm Chart
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.helm == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.12.0'
+
+      - name: Lint Helm chart
+        run: helm lint charts/kubamf
+
+      - name: Template Helm chart
+        run: |
+          helm template kubamf charts/kubamf \
+            --values charts/kubamf/values.yaml \
+            --output-dir /tmp/helm-template
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [lint, test, build]
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: build-artifacts-${{ github.sha }}
+
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          CI: true
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run security audit
+        run: npm audit --audit-level=moderate
+
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/node@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+
+  summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [lint, test, test-parallel, build, docker-build, helm-lint, integration-tests, security-scan]
+    if: always()
+    steps:
+      - name: Check all jobs status
+        run: |
+          echo "Lint: ${{ needs.lint.result }}"
+          echo "Test: ${{ needs.test.result }}"
+          echo "Test Parallel: ${{ needs.test-parallel.result }}"
+          echo "Build: ${{ needs.build.result }}"
+          echo "Docker Build: ${{ needs.docker-build.result }}"
+          echo "Helm Lint: ${{ needs.helm-lint.result }}"
+          echo "Integration Tests: ${{ needs.integration-tests.result }}"
+          echo "Security Scan: ${{ needs.security-scan.result }}"
+
+          if [[ "${{ needs.lint.result }}" == "failure" ||
+                "${{ needs.test.result }}" == "failure" ||
+                "${{ needs.test-parallel.result }}" == "failure" ||
+                "${{ needs.build.result }}" == "failure" ||
+                "${{ needs.docker-build.result }}" == "failure" ||
+                "${{ needs.helm-lint.result }}" == "failure" ||
+                "${{ needs.integration-tests.result }}" == "failure" ]]; then
+            echo "❌ CI failed"
+            exit 1
+          else
+            echo "✅ CI passed"
+          fi

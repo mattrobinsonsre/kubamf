@@ -1,0 +1,27 @@
+{{- if .Values.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kubamf.fullname" . }}
+  labels:
+    {{- include "kubamf.labels" . | nindent 4 }}
+data:
+  kubamf.yaml: |
+    server:
+      port: 3001
+      nodeEnv: production
+    auth:
+      {{- if .Values.bamf.enabled }}
+      provider: bamf
+      bamf:
+        enabled: true
+      {{- else }}
+      provider: {{ .Values.auth.provider | default "none" }}
+      {{- end }}
+    frontend:
+      enabled: true
+    healthCheck:
+      enabled: true
+    compression:
+      enabled: true
+{{- end }}

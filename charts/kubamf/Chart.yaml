@@ -1,0 +1,6 @@
+apiVersion: v2
+name: kubamf
+description: Kubernetes GUI — desktop app or BAMF subchart for browser-based K8s access
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

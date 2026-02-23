@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  kubamf-web:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+    volumes:
+      # Mount kubeconfig from host
+      - ~/.kube:/home/kubamf/.kube:ro
+      # Optional: mount additional kubectl configs
+      - ~/.minikube:/home/kubamf/.minikube:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/kubeconfig/contexts"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - kubamf-network
+
+networks:
+  kubamf-network:
+    driver: bridge

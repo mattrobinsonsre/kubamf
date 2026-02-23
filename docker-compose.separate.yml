@@ -1,0 +1,39 @@
+# Separate frontend and API containers
+version: '3.8'
+
+services:
+  kubamf-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+    volumes:
+      # Mount kubeconfig from host
+      - ~/.kube:/home/kubamf/.kube:ro
+      # Optional: mount additional kubectl configs
+      - ~/.minikube:/home/kubamf/.minikube:ro
+    restart: unless-stopped
+    networks:
+      - kubamf-network
+
+  kubamf-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "80:80"
+    environment:
+      - API_HOST=http://kubamf-api:3001
+    depends_on:
+      - kubamf-api
+    restart: unless-stopped
+    networks:
+      - kubamf-network
+
+networks:
+  kubamf-network:
+    driver: bridge

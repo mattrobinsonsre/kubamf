@@ -1,0 +1,59 @@
+<svg width="200" height="60" viewBox="0 0 200 60" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="logoBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3B82F6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1E40AF;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Icon part -->
+  <g transform="translate(30,30)">
+    <!-- Background circle -->
+    <circle cx="0" cy="0" r="25" fill="url(#logoBlue)" opacity="0.1"/>
+
+    <!-- Kubernetes wheel background -->
+    <g opacity="0.3">
+      <circle cx="0" cy="0" r="3" fill="#1E40AF"/>
+      <g stroke="#1E40AF" stroke-width="1.5">
+        <line x1="0" y1="-15" x2="0" y2="-5"/>
+        <line x1="10.6" y1="-10.6" x2="3.5" y2="-3.5"/>
+        <line x1="15" y1="0" x2="5" y2="0"/>
+        <line x1="10.6" y1="10.6" x2="3.5" y2="3.5"/>
+        <line x1="0" y1="15" x2="0" y2="5"/>
+        <line x1="-10.6" y1="10.6" x2="-3.5" y2="3.5"/>
+        <line x1="-15" y1="0" x2="-5" y2="0"/>
+        <line x1="-10.6" y1="-10.6" x2="-3.5" y2="-3.5"/>
+      </g>
+    </g>
+
+    <!-- Q Letter -->
+    <circle cx="-5" cy="-2" r="12" fill="none" stroke="url(#logoBlue)" stroke-width="3"/>
+    <path d="M 3 8 L 10 15" stroke="url(#logoBlue)" stroke-width="3" stroke-linecap="round"/>
+
+    <!-- K Letter -->
+    <g>
+      <line x1="8" y1="-10" x2="8" y2="10" stroke="url(#logoBlue)" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="8" y1="-2" x2="15" y2="-10" stroke="url(#logoBlue)" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="8" y1="-2" x2="15" y2="6" stroke="url(#logoBlue)" stroke-width="2.5" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <!-- Text part -->
+  <g transform="translate(70, 35)">
+    <!-- "kubamf" text -->
+    <text x="0" y="0" font-family="Inter, -apple-system, system-ui, sans-serif" font-size="20" font-weight="600" fill="#1E40AF">
+      kubamf
+    </text>
+
+    <!-- Subtitle -->
+    <text x="0" y="15" font-family="Inter, -apple-system, system-ui, sans-serif" font-size="10" font-weight="400" fill="#6B7280" opacity="0.8">
+      kubectl for the web
+    </text>
+  </g>
+
+  <!-- Small CLI indicator -->
+  <g transform="translate(175, 45)">
+    <rect x="0" y="0" width="15" height="2" rx="1" fill="#3B82F6" opacity="0.5"/>
+    <circle cx="18" cy="1" r="1" fill="#3B82F6" opacity="0.5"/>
+  </g>
+</svg>
