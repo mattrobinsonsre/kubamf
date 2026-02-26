@@ -31,10 +31,20 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # Allow egress to K8s API server
-    - to:
-        - namespaceSelector: {}
-      ports:
+    {{- if .Values.bamf.enabled }}
+    # Allow egress to BAMF API — kubamf routes K8s calls through
+    # the BAMF kube proxy (API → bridge → agent → K8s API).
+    - ports:
+        - protocol: TCP
+          port: 8000
+    {{- else }}
+    # Allow egress to K8s API server. ClusterIP listens on 443 but
+    # DNAT rewrites to the real endpoint port (6443). Allow both so
+    # the policy works regardless of where the CNI evaluates it.
+    - ports:
         - protocol: TCP
           port: 443
+        - protocol: TCP
+          port: 6443
+    {{- end }}
 {{- end }}

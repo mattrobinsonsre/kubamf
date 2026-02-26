@@ -58,8 +58,15 @@ class FrontendConfig {
       }
     }
 
-    // For development/standard web deployment
-    const apiHost = import.meta.env.VITE_API_HOST || 'http://localhost:3001'
+    // For development/standard web deployment.
+    // When served from a real hostname (not localhost), use the current origin
+    // so the browser talks to the same backend that served the page. This is
+    // essential for BAMF proxy mode where the frontend is served via a tunnel
+    // hostname like kubamf.tunnel.bamf.example.com.
+    const currentHost = typeof window !== 'undefined' ? window.location.origin : ''
+    const isLocalhost = currentHost.includes('localhost') || currentHost.includes('127.0.0.1')
+    const apiHost = import.meta.env.VITE_API_HOST ||
+                    (isLocalhost ? 'http://localhost:3001' : currentHost)
 
     return {
       deployment: 'web',

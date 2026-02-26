@@ -25,8 +25,8 @@ ingress:
 
 resources:
   requests:
-    cpu: 100m
-    memory: 128Mi
+    cpu: 250m
+    memory: 512Mi
   limits:
     cpu: 500m
     memory: 512Mi
@@ -45,16 +45,21 @@ networkPolicy:
 
 bamf:
   enabled: false
-  # When true: auth=bamf, impersonation RBAC, request-context middleware
+  # When true: auth=bamf, K8s calls routed through BAMF kube proxy
+  # Internal BAMF API URL (defaults to http://{release-name}-api:8000)
+  apiUrl: ""
+  # Name of the kubernetes resource in BAMF agent config.
+  # Required in BAMF mode — must match a 'kubernetes' type resource.
+  kubeResourceName: ""
 
 auth:
   provider: none  # 'none' or 'bamf'
 
 rbac:
   create: true
-  # impersonation ClusterRole for bamf mode
+  # impersonation ClusterRole for standalone mode with external auth
   impersonation:
-    enabled: false  # auto-enabled when bamf.enabled=true
+    enabled: false
 
 env: []
 nodeSelector: {}

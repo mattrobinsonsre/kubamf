@@ -16,7 +16,8 @@ const requestContext = new AsyncLocalStorage()
 function requestContextMiddleware() {
   return (req, res, next) => {
     const ctx = {
-      user: req.user || null
+      user: req.user || null,
+      sessionToken: req.bamfSessionToken || null
     }
     requestContext.run(ctx, next)
   }

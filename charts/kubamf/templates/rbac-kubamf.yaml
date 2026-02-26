@@ -1,6 +1,10 @@
 {{- if and .Values.enabled .Values.rbac.create }}
+{{- if not .Values.bamf.enabled }}
 ---
-# ClusterRole granting kubamf read access to browse K8s resources
+# ClusterRole granting kubamf read access to browse K8s resources.
+# Skipped entirely in BAMF mode — ALL K8s operations (including exec/attach)
+# route through the BAMF kube proxy chain (API → bridge → agent → K8s API).
+# kubamf must NEVER have direct K8s permissions in BAMF mode.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -98,9 +102,10 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "kubamf.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
-{{- if or .Values.bamf.enabled .Values.rbac.impersonation.enabled }}
+{{- if .Values.rbac.impersonation.enabled }}
 ---
-# ClusterRole granting impersonation — required for bamf mode
+# ClusterRole granting impersonation — only for non-BAMF standalone mode
+# when explicitly enabled. In BAMF mode, the BAMF agent handles impersonation.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -129,5 +134,6 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "kubamf.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- end }}
 {{- end }}

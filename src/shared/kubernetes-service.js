@@ -18,20 +18,13 @@ class KubernetesService {
     this.isInCluster = false
     this.bamfMode = false
 
-    // Check for bamf mode - use in-cluster config with impersonation
+    // Check for bamf mode - route K8s API calls through BAMF kube proxy
     if (process.env.BAMF_ENABLED === 'true') {
-      this.kc = new k8s.KubeConfig()
-      this.kc.loadFromCluster()
+      const { createBamfKubeConfig } = require('../backend/bamf-kube-config')
+      this.kc = createBamfKubeConfig()
       this.bamfMode = true
       this.isInCluster = true
-      // Override applyToRequest to inject impersonation headers per-request
-      const originalApplyToRequest = this.kc.applyToRequest.bind(this.kc)
-      this.kc.applyToRequest = (opts) => {
-        originalApplyToRequest(opts)
-        this._applyImpersonation(opts)
-        return opts
-      }
-      console.log('Running in bamf mode - using in-cluster config with user impersonation')
+      console.log('Running in BAMF mode - K8s calls routed through BAMF kube proxy')
     } else {
       this.loadKubeConfig()
     }
@@ -47,11 +40,16 @@ class KubernetesService {
         // Running inside Kubernetes cluster
         console.log('Detected in-cluster environment, using service account configuration')
         this.kc.loadFromCluster()
+        // Rename the context from 'inClusterContext' to 'in-cluster' so
+        // setCurrentContext('in-cluster') works in all API methods.
+        if (this.kc.contexts.length > 0) {
+          this.kc.contexts[0].name = 'in-cluster'
+          this.kc.currentContext = 'in-cluster'
+        }
         this.isInCluster = true
-
-        // Set a special context name for in-cluster
-        // This allows the UI to show "In-Cluster" as the context
         this.currentContext = 'in-cluster'
+        // Make setCurrentContext a no-op — only one context exists
+        this.kc.setCurrentContext = () => {}
       } else if (fs.existsSync(this.currentKubeconfigPath)) {
         // Running outside cluster with kubeconfig file
         console.log(`Loading kubeconfig from: ${this.currentKubeconfigPath}`)

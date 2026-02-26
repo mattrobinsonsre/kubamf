@@ -171,102 +171,106 @@ const ContextTabs = () => {
     )
   }
 
+  const showTabBar = contexts.length > 1
+
   return (
     <div className="flex-1 flex flex-col h-full min-w-0">
-      {/* Tab Bar Container */}
-      <div className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex-shrink-0" style={{WebkitAppRegion: 'drag'}}>
-        <div className="flex items-center min-w-0 flex-1">
-          {/* Left scroll arrow */}
-          {showLeftArrow && (
-            <button
-              onClick={scrollLeft}
-              className="flex-shrink-0 w-8 h-10 flex items-center justify-center bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 border-r border-gray-200 dark:border-gray-600 transition-colors"
-              title="Scroll left"
-              aria-label="Scroll left"
-              style={{WebkitAppRegion: 'no-drag'}}
+      {/* Tab Bar Container — hidden when there's only one context */}
+      {showTabBar && (
+        <div className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex-shrink-0" style={{WebkitAppRegion: 'drag'}}>
+          <div className="flex items-center min-w-0 flex-1">
+            {/* Left scroll arrow */}
+            {showLeftArrow && (
+              <button
+                onClick={scrollLeft}
+                className="flex-shrink-0 w-8 h-10 flex items-center justify-center bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 border-r border-gray-200 dark:border-gray-600 transition-colors"
+                title="Scroll left"
+                aria-label="Scroll left"
+                style={{WebkitAppRegion: 'no-drag'}}
+              >
+                <ChevronLeft size={16} className="text-gray-600 dark:text-gray-400" />
+              </button>
+            )}
+
+            {/* Scrollable Tab Container - This has overflow but is contained within the h-screen parent */}
+            <div
+              ref={tabContainerRef}
+              className="flex overflow-x-auto scrollbar-hide flex-1 min-w-0"
+              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitAppRegion: 'no-drag' }}
+              onWheel={(e) => {
+                // Prevent vertical scrolling from affecting horizontal tab scrolling
+                if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+                  e.stopPropagation()
+                }
+                // Allow horizontal scrolling to bubble up for trackpad gestures
+                if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                  e.preventDefault()
+                }
+              }}
             >
-              <ChevronLeft size={16} className="text-gray-600 dark:text-gray-400" />
-            </button>
-          )}
+              {visibleTabs.map((contextName, index) => {
+                const isActive = contextName === currentContext
+                const context = contexts.find(c => c.name === contextName)
+                const isDragging = draggedTab?.name === contextName
+                const isDropTarget = dragOverIndex === index
 
-          {/* Scrollable Tab Container - This has overflow but is contained within the h-screen parent */}
-          <div
-            ref={tabContainerRef}
-            className="flex overflow-x-auto scrollbar-hide flex-1 min-w-0"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitAppRegion: 'no-drag' }}
-            onWheel={(e) => {
-              // Prevent vertical scrolling from affecting horizontal tab scrolling
-              if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-                e.stopPropagation()
-              }
-              // Allow horizontal scrolling to bubble up for trackpad gestures
-              if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-                e.preventDefault()
-              }
-            }}
-          >
-            {visibleTabs.map((contextName, index) => {
-              const isActive = contextName === currentContext
-              const context = contexts.find(c => c.name === contextName)
-              const isDragging = draggedTab?.name === contextName
-              const isDropTarget = dragOverIndex === index
+                return (
+                  <div
+                    key={contextName}
+                    data-context={contextName}
+                    draggable={true}
+                    onDragStart={(e) => handleDragStart(e, contextName, index)}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, index)}
+                    onDragEnd={handleDragEnd}
+                    onClick={() => handleTabClick(contextName)}
+                    className={`
+                      flex items-center px-4 py-2 cursor-pointer border-r border-gray-200 dark:border-gray-700
+                      hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors min-w-0 flex-shrink-0
+                      ${isActive
+                        ? 'bg-blue-100 dark:bg-blue-900 border-b-4 border-blue-600 shadow-lg font-bold text-blue-800 dark:text-blue-50 ring-1 ring-blue-200 dark:ring-blue-700'
+                        : 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                      }
+                      ${isDragging
+                        ? 'opacity-50 transform scale-95'
+                        : ''
+                      }
+                      ${isDropTarget
+                        ? 'bg-blue-100 dark:bg-blue-900 border-l-2 border-blue-500'
+                        : ''
+                      }
+                    `}
+                    style={{
+                      transform: isDragging ? 'rotate(5deg)' : 'none',
+                      transition: isDragging ? 'none' : 'all 0.2s ease'
+                    }}
+                  >
+                    <span className="text-sm font-medium truncate text-gray-900 dark:text-gray-100 select-none">
+                      {truncateContextName(contextName)}
+                    </span>
 
-              return (
-                <div
-                  key={contextName}
-                  data-context={contextName}
-                  draggable={true}
-                  onDragStart={(e) => handleDragStart(e, contextName, index)}
-                  onDragOver={(e) => handleDragOver(e, index)}
-                  onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDrop(e, index)}
-                  onDragEnd={handleDragEnd}
-                  onClick={() => handleTabClick(contextName)}
-                  className={`
-                    flex items-center px-4 py-2 cursor-pointer border-r border-gray-200 dark:border-gray-700
-                    hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors min-w-0 flex-shrink-0
-                    ${isActive
-                      ? 'bg-blue-100 dark:bg-blue-900 border-b-4 border-blue-600 shadow-lg font-bold text-blue-800 dark:text-blue-50 ring-1 ring-blue-200 dark:ring-blue-700'
-                      : 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
-                    }
-                    ${isDragging
-                      ? 'opacity-50 transform scale-95'
-                      : ''
-                    }
-                    ${isDropTarget
-                      ? 'bg-blue-100 dark:bg-blue-900 border-l-2 border-blue-500'
-                      : ''
-                    }
-                  `}
-                  style={{
-                    transform: isDragging ? 'rotate(5deg)' : 'none',
-                    transition: isDragging ? 'none' : 'all 0.2s ease'
-                  }}
-                >
-                  <span className="text-sm font-medium truncate text-gray-900 dark:text-gray-100 select-none">
-                    {truncateContextName(contextName)}
-                  </span>
+                    {getConnectionIcon(contextName)}
+                  </div>
+                )
+              })}
+            </div>
 
-                  {getConnectionIcon(contextName)}
-                </div>
-              )
-            })}
+            {/* Right scroll arrow */}
+            {showRightArrow && (
+              <button
+                onClick={scrollRight}
+                className="flex-shrink-0 w-8 h-10 flex items-center justify-center bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 border-l border-gray-200 dark:border-gray-600 transition-colors"
+                title="Scroll right"
+                aria-label="Scroll right"
+                style={{WebkitAppRegion: 'no-drag'}}
+              >
+                <ChevronRight size={16} className="text-gray-600 dark:text-gray-400" />
+              </button>
+            )}
           </div>
-
-          {/* Right scroll arrow */}
-          {showRightArrow && (
-            <button
-              onClick={scrollRight}
-              className="flex-shrink-0 w-8 h-10 flex items-center justify-center bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 border-l border-gray-200 dark:border-gray-600 transition-colors"
-              title="Scroll right"
-              aria-label="Scroll right"
-              style={{WebkitAppRegion: 'no-drag'}}
-            >
-              <ChevronRight size={16} className="text-gray-600 dark:text-gray-400" />
-            </button>
-          )}
         </div>
-      </div>
+      )}
 
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">

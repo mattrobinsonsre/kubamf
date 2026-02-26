@@ -23,11 +23,8 @@ FROM public.ecr.aws/docker/library/node:18-alpine AS production
 
 WORKDIR /app
 
-# Copy built application
-COPY --from=builder /app/dist ./dist
+# Copy package files and install production deps
 COPY --from=builder /app/package*.json ./
-
-# Install only production dependencies
 RUN npm ci --only=production
 
 # Create non-root user
@@ -37,6 +34,8 @@ RUN addgroup -g 1001 -S nodejs && \
 # Copy backend server and shared services
 COPY --from=builder /app/src/backend/ ./src/backend/
 COPY --from=builder /app/src/shared/ ./src/shared/
+# Copy built frontend to where the server expects it (../frontend relative to src/backend/)
+COPY --from=builder /app/dist/frontend/ ./src/frontend/
 # Copy generated documentation
 COPY --from=builder /app/public/docs.json ./public/docs.json
 

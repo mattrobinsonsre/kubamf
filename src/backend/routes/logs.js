@@ -4,39 +4,24 @@ const stream = require('stream')
 
 const router = express.Router()
 
-const { getRequestContext } = require('../request-context')
-
 // Initialize Kubernetes client
-let kc = new k8s.KubeConfig()
-try {
-  if (process.env.KUBERNETES_SERVICE_HOST) {
-    kc.loadFromCluster()
-  } else {
-    kc.loadFromDefault()
-  }
-} catch (error) {
-  console.error('Failed to load kubeconfig:', error)
-}
-
-// In bamf mode, add impersonation headers to outgoing K8s API requests
+let kc
 if (process.env.BAMF_ENABLED === 'true') {
-  const originalApplyToRequest = kc.applyToRequest.bind(kc)
-  kc.applyToRequest = (opts) => {
-    originalApplyToRequest(opts)
-    const ctx = getRequestContext()
-    if (ctx && ctx.user) {
-      opts.headers = opts.headers || {}
-      const username = ctx.user.email || ctx.user.username
-      if (username) {
-        opts.headers['Impersonate-User'] = username
-      }
-      if (ctx.user.groups && ctx.user.groups.length > 0) {
-        opts.headers['Impersonate-Group'] = ctx.user.groups
-      }
+  // BAMF mode: route K8s API calls through the BAMF kube proxy.
+  const { createBamfKubeConfig } = require('../bamf-kube-config')
+  kc = createBamfKubeConfig()
+  console.log('Logs route: using BAMF kube proxy')
+} else {
+  kc = new k8s.KubeConfig()
+  try {
+    if (process.env.KUBERNETES_SERVICE_HOST) {
+      kc.loadFromCluster()
+    } else {
+      kc.loadFromDefault()
     }
-    return opts
+  } catch (error) {
+    console.error('Failed to load kubeconfig:', error)
   }
-  console.log('Logs route: using in-cluster config with user impersonation')
 }
 
 // Get logs with optional tail

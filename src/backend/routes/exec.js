@@ -8,39 +8,39 @@ const router = express.Router()
 // Store active exec sessions
 const execSessions = new Map()
 
-const { getRequestContext } = require('../request-context')
+const isBamfMode = process.env.BAMF_ENABLED === 'true'
 
-// Initialize Kubernetes client for exec operations
-let kc = new k8s.KubeConfig()
-try {
-  if (process.env.KUBERNETES_SERVICE_HOST) {
-    kc.loadFromCluster()
-  } else {
-    kc.loadFromDefault()
+// Initialize Kubernetes client for non-exec operations (list, get, watch).
+// In BAMF mode, ALL K8s operations go through the BAMF kube proxy chain.
+// kubamf must NEVER talk to the K8s API directly — BAMF's RBAC controls
+// what operations are allowed.
+let kc
+if (isBamfMode) {
+  const { createBamfKubeConfig } = require('../bamf-kube-config')
+  kc = createBamfKubeConfig()
+  console.log('Exec route: using BAMF kube proxy')
+} else {
+  kc = new k8s.KubeConfig()
+  try {
+    if (process.env.KUBERNETES_SERVICE_HOST) {
+      kc.loadFromCluster()
+    } else {
+      kc.loadFromDefault()
+    }
+  } catch (error) {
+    console.error('Failed to load kubeconfig:', error)
   }
-} catch (error) {
-  console.error('Failed to load kubeconfig:', error)
 }
 
-// In bamf mode, add impersonation headers to outgoing K8s API requests
-if (process.env.BAMF_ENABLED === 'true') {
-  const originalApplyToRequest = kc.applyToRequest.bind(kc)
-  kc.applyToRequest = (opts) => {
-    originalApplyToRequest(opts)
-    const ctx = getRequestContext()
-    if (ctx && ctx.user) {
-      opts.headers = opts.headers || {}
-      const username = ctx.user.email || ctx.user.username
-      if (username) {
-        opts.headers['Impersonate-User'] = username
-      }
-      if (ctx.user.groups && ctx.user.groups.length > 0) {
-        opts.headers['Impersonate-Group'] = ctx.user.groups
-      }
-    }
-    return opts
+// Create a KubeConfig for exec/attach WebSocket operations.
+// In BAMF mode, the k8s client's WebSocket creation loses AsyncLocalStorage
+// context, so we create a per-request config with the token baked in.
+function getExecKubeConfig(sessionToken) {
+  if (isBamfMode && sessionToken) {
+    const { createBamfKubeConfig } = require('../bamf-kube-config')
+    return createBamfKubeConfig(sessionToken)
   }
-  console.log('Exec route: using in-cluster config with user impersonation')
+  return kc
 }
 
 // Detect available shells in a container
@@ -48,12 +48,12 @@ router.post('/detect-shells', async (req, res) => {
   try {
     const { namespace, pod, container, context } = req.body
 
-    // Set context if provided
-    if (context && context !== 'in-cluster') {
-      kc.setCurrentContext(context)
-    }
+    // Get per-request KubeConfig with explicit token for WebSocket exec.
+    // Must capture the token here (in the Express handler) before it's
+    // lost during the k8s client's internal WebSocket creation.
+    const execKc = getExecKubeConfig(req.bamfSessionToken)
 
-    const exec = new k8s.Exec(kc)
+    const exec = new k8s.Exec(execKc)
     const shells = [
       '/bin/bash',
       '/bin/zsh',
@@ -68,34 +68,37 @@ router.post('/detect-shells', async (req, res) => {
 
     for (const shell of shells) {
       try {
-        // Create a promise to check if shell exists
-        const result = await new Promise((resolve) => {
-          const stdout = new stream.Writable({
-            write: (chunk, encoding, callback) => {
-              callback()
-            }
-          })
+        // Create a promise to check if shell exists, with timeout
+        const result = await Promise.race([
+          new Promise((resolve) => {
+            const stdout = new stream.Writable({
+              write: (chunk, encoding, callback) => {
+                callback()
+              }
+            })
 
-          const stderr = new stream.Writable({
-            write: (chunk, encoding, callback) => {
-              callback()
-            }
-          })
+            const stderr = new stream.Writable({
+              write: (chunk, encoding, callback) => {
+                callback()
+              }
+            })
 
-          exec.exec(
-            namespace,
-            pod,
-            container,
-            ['which', shell],
-            stdout,
-            stderr,
-            null, // stdin
-            false, // tty
-            (status) => {
-              resolve(status.status === 'Success')
-            }
-          ).catch(() => resolve(false))
-        })
+            exec.exec(
+              namespace,
+              pod,
+              container,
+              ['which', shell],
+              stdout,
+              stderr,
+              null, // stdin
+              false, // tty
+              (status) => {
+                resolve(status.status === 'Success')
+              }
+            ).catch(() => resolve(false))
+          }),
+          new Promise((resolve) => setTimeout(() => resolve(false), 10000))
+        ])
 
         if (result) {
           availableShells.push(shell)
@@ -123,6 +126,13 @@ function handleExecWebSocket(ws, req) {
   let sessionId = null
   let execStream = null
 
+  // Capture the session token from the upgrade request headers immediately.
+  // AsyncLocalStorage context from server.js's requestContext.run() does NOT
+  // propagate into ws.on('message') callbacks — they fire asynchronously
+  // after the run() scope has exited. Reading from req.headers here (in the
+  // closure) ensures the token is available when the first message arrives.
+  const sessionToken = req.headers?.['x-bamf-session-token'] || null
+
   ws.on('message', async (message) => {
     try {
       const data = JSON.parse(message.toString())
@@ -138,14 +148,13 @@ function handleExecWebSocket(ws, req) {
       if (!execStream) {
         const { namespace, pod, container, context, shell, cols, rows } = data
 
-        // Set context if provided
-        if (context && context !== 'in-cluster') {
-          kc.setCurrentContext(context)
-        }
+        console.log(`[EXEC] Starting exec: ${namespace}/${pod}/${container} shell=${shell}`)
 
         sessionId = `${context}-${namespace}-${pod}-${container}-${Date.now()}`
 
-        const exec = new k8s.Exec(kc)
+        const execKc = getExecKubeConfig(sessionToken)
+
+        const exec = new k8s.Exec(execKc)
 
         // Create stdout stream that sends to WebSocket
         const stdout = new stream.Writable({

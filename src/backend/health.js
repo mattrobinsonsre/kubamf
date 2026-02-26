@@ -76,9 +76,20 @@ class HealthChecker {
     })
   }
 
-  // Check kubeconfig file
+  // Check kubeconfig file or in-cluster credentials
   checkKubeConfig() {
     try {
+      // In-cluster: ServiceAccount token is sufficient (no kubeconfig file needed)
+      const saTokenPath = '/var/run/secrets/kubernetes.io/serviceaccount/token'
+      if (fs.existsSync(saTokenPath)) {
+        return {
+          valid: true,
+          path: saTokenPath,
+          source: 'in-cluster',
+          error: null
+        }
+      }
+
       const kubeconfigPath = process.env.KUBECONFIG || path.join(os.homedir(), '.kube', 'config')
 
       if (!fs.existsSync(kubeconfigPath)) {
@@ -93,6 +104,7 @@ class HealthChecker {
       return {
         valid: true,
         path: kubeconfigPath,
+        source: 'file',
         size: stats.size,
         modified: stats.mtime.toISOString(),
         error: null
@@ -315,27 +327,26 @@ class HealthChecker {
   // Readiness check (for kubernetes readiness probe)
   async getReadiness() {
     try {
-      // Check if basic dependencies are available
-      const kubectlCheck = await this.checkKubectl()
       const kubeconfigCheck = this.checkKubeConfig()
 
-      if (!kubectlCheck.available || !kubeconfigCheck.valid) {
+      // K8s credentials are required (kubeconfig file or in-cluster SA token)
+      if (!kubeconfigCheck.valid) {
         return {
           ready: false,
-          reason: 'Dependencies not available',
+          reason: 'No Kubernetes credentials available',
           checks: {
-            kubectl: kubectlCheck.available,
             kubeconfig: kubeconfigCheck.valid
           }
         }
       }
 
+      // kubectl is optional — kubamf uses @kubernetes/client-node directly
       return {
         ready: true,
         timestamp: new Date().toISOString(),
         checks: {
-          kubectl: true,
-          kubeconfig: true
+          kubeconfig: true,
+          source: kubeconfigCheck.source
         }
       }
     } catch (error) {
@@ -343,7 +354,6 @@ class HealthChecker {
         ready: false,
         reason: error.message,
         checks: {
-          kubectl: false,
           kubeconfig: false
         }
       }

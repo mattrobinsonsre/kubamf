@@ -74,6 +74,9 @@ class KubeConfigManager {
   }
 
   setKubeconfigPath(newPath) {
+    if (process.env.BAMF_ENABLED === 'true') {
+      throw new Error('Cannot switch kubeconfig in BAMF mode')
+    }
     if (!fs.existsSync(newPath)) {
       throw new Error(`Kubeconfig file not found: ${newPath}`)
     }
@@ -108,6 +111,28 @@ class KubeConfigManager {
         if (Date.now() - cached.timestamp < 30000) { // 30 seconds cache
           return cached.data
         }
+      }
+
+      // BAMF mode or in-cluster: always use the synthetic in-cluster context.
+      // In BAMF mode, kubamf talks to the local K8s API via ServiceAccount
+      // with impersonation — kubeconfig files are irrelevant.
+      const saTokenPath = '/var/run/secrets/kubernetes.io/serviceaccount/token'
+      if ((process.env.BAMF_ENABLED === 'true' || !fs.existsSync(pathToUse)) && fs.existsSync(saTokenPath)) {
+        const result = {
+          contexts: [{
+            name: 'in-cluster',
+            cluster: 'in-cluster',
+            user: 'serviceaccount',
+            namespace: process.env.POD_NAMESPACE || 'default',
+            current: true
+          }],
+          currentContext: 'in-cluster',
+          kubeconfigPath: saTokenPath,
+          isDefault: true,
+          inCluster: true
+        }
+        this.kubeconfigCache.set(cacheKey, { data: result, timestamp: Date.now() })
+        return result
       }
 
       if (!fs.existsSync(pathToUse)) {
@@ -146,6 +171,11 @@ class KubeConfigManager {
   }
 
   async discoverKubeconfigFiles() {
+    // In BAMF mode, kubeconfig discovery is irrelevant — return empty.
+    if (process.env.BAMF_ENABLED === 'true') {
+      return []
+    }
+
     const kubeconfigLocations = [
       // Default locations
       this.defaultKubeconfigPath,
@@ -1214,7 +1244,35 @@ const startServer = () => {
 
     if (pathname === '/api/exec/stream') {
       wss.handleUpgrade(request, socket, head, (ws) => {
-        execRoutes.handleExecWebSocket(ws, request)
+        // In BAMF mode, extract identity from proxy headers and wrap in
+        // AsyncLocalStorage so handleExecWebSocket can use impersonation.
+        // The upgrade event bypasses Express middleware, so we replicate
+        // the auth + context setup that /api routes get automatically.
+        if (config.get('auth.bamf.enabled')) {
+          const email = request.headers['x-forwarded-email']
+          if (!email) {
+            ws.close(1008, 'No identity header from bamf proxy')
+            return
+          }
+          const { requestContext } = require('./request-context')
+          const ctx = {
+            user: {
+              id: email,
+              email,
+              username: request.headers['x-forwarded-user'] || email,
+              roles: (request.headers['x-forwarded-roles'] || '').split(',').filter(Boolean),
+              groups: (request.headers['x-forwarded-groups'] || '').split(',').filter(Boolean),
+              provider: 'bamf',
+              authenticatedAt: new Date().toISOString()
+            },
+            sessionToken: request.headers['x-bamf-session-token'] || null
+          }
+          requestContext.run(ctx, () => {
+            execRoutes.handleExecWebSocket(ws, request)
+          })
+        } else {
+          execRoutes.handleExecWebSocket(ws, request)
+        }
       })
     } else {
       socket.destroy()

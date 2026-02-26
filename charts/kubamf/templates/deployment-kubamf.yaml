@@ -50,6 +50,12 @@ spec:
               value: "true"
             - name: AUTH_PROVIDER
               value: bamf
+            - name: BAMF_API_URL
+              value: {{ .Values.bamf.apiUrl | default (printf "http://%s-api:8000" .Release.Name) | quote }}
+            {{- if .Values.bamf.kubeResourceName }}
+            - name: BAMF_KUBE_RESOURCE_NAME
+              value: {{ .Values.bamf.kubeResourceName | quote }}
+            {{- end }}
             {{- else }}
             - name: AUTH_PROVIDER
               value: {{ .Values.auth.provider | default "none" }}

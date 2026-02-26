@@ -42,6 +42,11 @@ class BamfAuthProvider extends BaseAuthProvider {
         groups: (req.headers['x-forwarded-groups'] || '').split(',').filter(Boolean)
       })
 
+      // Capture BAMF session token for outbound API calls (kube proxy).
+      // The BAMF proxy forwards this so kubamf can authenticate when
+      // making K8s API calls back through the BAMF kube proxy endpoint.
+      req.bamfSessionToken = req.headers['x-bamf-session-token'] || null
+
       next()
     }
   }
