@@ -943,6 +943,18 @@ const ResourceList = ({ contextName, selectedResource, selectedNamespace = 'defa
     }
   }
 
+  // Handle double-click to open inspector panel
+  const handleResourceDoubleClick = (resourceKey) => {
+    const resource = resources.find(r => {
+      const key = `${r.metadata?.namespace || 'cluster'}/${r.metadata?.name || r.name}`
+      return key === resourceKey
+    })
+    if (resource) {
+      setInspectedResource(resource)
+      setShowInspector(true)
+    }
+  }
+
   // Clear selection when clicking outside
   const handleTableClick = (event) => {
     // Only clear if clicking on the table background, not on a row
@@ -1831,6 +1843,7 @@ const ResourceList = ({ contextName, selectedResource, selectedNamespace = 'defa
                         borderBottom: isSelected ? '1px solid rgb(59, 130, 246, 0.3)' : undefined,
                       }}
                       onClick={(e) => handleResourceClick(resourceKey, index, e)}
+                      onDoubleClick={() => handleResourceDoubleClick(resourceKey)}
                       onMouseDown={(e) => e.preventDefault()} // Prevent text selection on shift-click
                     >
                       <td className="w-8 px-2" onClick={(e) => e.stopPropagation()}>
@@ -1852,13 +1865,15 @@ const ResourceList = ({ contextName, selectedResource, selectedNamespace = 'defa
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         <div className="flex items-center space-x-2">
-                          {canHaveChildren && hasChildren && (
+                          {canHaveChildren && hasChildren ? (
                             <ExpandButton
                               isExpanded={isExpanded}
                               onClick={() => toggleResourceExpansion(resource, resourceKey, resourceKind)}
                               size={14}
                             />
-                          )}
+                          ) : canHaveChildren ? (
+                            <span className="inline-block" style={{ width: 22 }} />
+                          ) : null}
                           {getStatusIcon(status)}
                           <span className="font-medium text-gray-900 dark:text-gray-100 text-sm truncate" title={name}>
                             {name}
@@ -2077,23 +2092,34 @@ const ResourceList = ({ contextName, selectedResource, selectedNamespace = 'defa
                               return (
                                 <React.Fragment key={childKey}>
                                   <tr className="bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50">
+                                    <td className="w-8 px-2"></td>{/* Empty checkbox column */}
                                     <td className="px-3 py-2 whitespace-nowrap">
                                       <div className="flex items-center space-x-2 pl-6">
                                         <span className="text-gray-400">
                                           {cIndex === childItems.length - 1 ? '└─' : '├─'}
                                         </span>
                                         {/* Expand button for child if it can have children */}
-                                        {(childKind === 'Pod' || childKind === 'ReplicaSet' || childKind === 'Job') &&
-                                         ((childKind === 'Pod' && childContainers.length > 0) ||
-                                          (childKind === 'ReplicaSet' && (childResource.status?.replicas || 0) > 0) ||
-                                          (childKind === 'Job' && (childResource.status?.active || childResource.status?.succeeded || childResource.status?.failed || 0) > 0)) && (
-                                          <ExpandButton
-                                            isExpanded={isChildExpanded}
-                                            onClick={() => toggleResourceExpansion(childResource, childKey, childKind)}
-                                            size={12}
-                                            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                                          />
-                                        )}
+                                        {(() => {
+                                          const childCanExpand = (childKind === 'Pod' || childKind === 'ReplicaSet' || childKind === 'Job')
+                                          const childHasChildren = childCanExpand && (
+                                            (childKind === 'Pod' && childContainers.length > 0) ||
+                                            (childKind === 'ReplicaSet' && (childResource.status?.replicas || 0) > 0) ||
+                                            (childKind === 'Job' && (childResource.status?.active || childResource.status?.succeeded || childResource.status?.failed || 0) > 0)
+                                          )
+                                          if (childHasChildren) {
+                                            return (
+                                              <ExpandButton
+                                                isExpanded={isChildExpanded}
+                                                onClick={() => toggleResourceExpansion(childResource, childKey, childKind)}
+                                                size={12}
+                                                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                              />
+                                            )
+                                          } else if (childCanExpand) {
+                                            return <span className="inline-block" style={{ width: 18 }} />
+                                          }
+                                          return null
+                                        })()}
                                         <span className="text-sm text-gray-700 dark:text-gray-300">
                                           {childResource.metadata?.name || '-'}
                                         </span>
@@ -2198,18 +2224,21 @@ const ResourceList = ({ contextName, selectedResource, selectedNamespace = 'defa
                                         return (
                                           <React.Fragment key={podKey}>
                                             <tr className="bg-gray-50/50 dark:bg-gray-800/30 hover:bg-gray-100/50 dark:hover:bg-gray-700/30">
+                                              <td className="w-8 px-2"></td>{/* Empty checkbox column */}
                                               <td className="px-3 py-2 whitespace-nowrap">
                                                 <div className="flex items-center space-x-2 pl-12">
                                                   <span className="text-gray-400">
                                                     {podIndex === childChildItems.length - 1 ? '└─' : '├─'}
                                                   </span>
-                                                  {podContainerList.length > 0 && (
+                                                  {podContainerList.length > 0 ? (
                                                     <ExpandButton
                                                       isExpanded={isPodExpanded}
                                                       onClick={() => toggleResourceExpansion(pod, podKey, 'Pod')}
                                                       size={10}
                                                       className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                                                     />
+                                                  ) : (
+                                                    <span className="inline-block" style={{ width: 14 }} />
                                                   )}
                                                   <span className="text-xs text-gray-600 dark:text-gray-400">
                                                     {pod.metadata?.name || '-'}
@@ -2255,6 +2284,7 @@ const ResourceList = ({ contextName, selectedResource, selectedNamespace = 'defa
                                             {isPodExpanded && podContainerList.length > 0 && (
                                               <>
                                                 <tr className="bg-blue-50/50 dark:bg-blue-900/10 border-b border-blue-200/50 dark:border-blue-800/50">
+                                                  <td className="w-8 px-2"></td>{/* Empty checkbox column */}
                                                   <td className="px-3 py-0.5 text-xs font-semibold text-blue-600 dark:text-blue-400 pl-20">
                                                     Containers
                                                   </td>
