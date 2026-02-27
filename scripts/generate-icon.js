@@ -26,6 +26,7 @@ try {
   } catch {
     // rsvg-convert not in PATH, try common locations
     const possiblePaths = [
+      '/opt/homebrew/bin/rsvg-convert',
       '/usr/bin/rsvg-convert',
       '/usr/local/bin/rsvg-convert',
       'rsvg-convert'
@@ -47,12 +48,16 @@ try {
     }
 
     if (!found) {
-      // If rsvg-convert is not available, just copy the SVG as a fallback
-      console.warn('⚠️  rsvg-convert not found, using SVG directly');
+      // If rsvg-convert is not available and a valid icon already exists, keep it
+      if (fs.existsSync(pngPath) && fs.statSync(pngPath).size > 0) {
+        console.warn('⚠️  rsvg-convert not found, keeping existing icon:', pngPath);
+        process.exit(0);
+      }
+      // No rsvg-convert and no existing icon — copy SVG as fallback
+      console.warn('⚠️  rsvg-convert not found, icon will need to be generated natively');
       fs.copyFileSync(svgPath, pngPath.replace('.png', '.svg'));
-      // Also create a dummy PNG file to satisfy build requirements
       fs.writeFileSync(pngPath, '');
-      console.log('✅ Icon placeholder created:', pngPath);
+      console.log('⚠️  Empty icon placeholder created:', pngPath);
       process.exit(0);
     }
   }

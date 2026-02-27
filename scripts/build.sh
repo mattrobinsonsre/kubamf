@@ -48,6 +48,8 @@ build_electron() {
   if [[ "$(uname -s)" == "Darwin" ]]; then
     info "Installing dependencies locally for macOS Electron build..."
     npm ci
+    # Regenerate icon natively (container build may have left an empty placeholder)
+    node scripts/generate-icon.js
     npx electron-builder \
       --config.extraMetadata.version="$CHART_VERSION" \
       --mac
