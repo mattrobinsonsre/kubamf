@@ -63,7 +63,7 @@ build_electron() {
   # (Wine is needed for Windows NSIS installers)
   info "Building Linux + Windows Electron packages (container)..."
   docker_electron bash -c "
-    npm ci && \
+    npm ci --omit=optional && \
     ./node_modules/.bin/electron-builder \
       --config.extraMetadata.version=${CHART_VERSION} \
       --linux --win

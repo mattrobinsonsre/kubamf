@@ -8,7 +8,7 @@
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:frontend": "vite",
     "dev:backend": "nodemon src/backend/server.js",
-    "prebuild": "node scripts/generate-icon.js && node scripts/generate-docs.js",
+    "prebuild": "node scripts/generate-docs.js",
     "build": "npm run build:frontend && npm run build:backend",
     "generate-docs": "node scripts/generate-docs.js",
     "build:frontend": "vite build",
