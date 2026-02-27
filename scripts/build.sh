@@ -60,14 +60,25 @@ build_electron() {
   fi
 
   # Linux — run in electronuserland/builder:wine container
-  # (has fpm for deb/rpm, all Linux packaging deps)
+  # Build AppImage, deb, and tar.gz in container. RPM is built natively
+  # below because fpm's rpmbuild uses xzmt compression which crashes
+  # under QEMU emulation on arm64 hosts.
   info "Building Linux Electron packages (container)..."
   docker_electron bash -c "
     npm ci --ignore-scripts && \
     ./node_modules/.bin/electron-builder \
       --config.extraMetadata.version=${CHART_VERSION} \
-      --linux
+      --linux AppImage deb tar.gz
   "
+
+  # Linux RPM — build natively on macOS (electron-builder downloads its own
+  # macOS-native fpm binary; avoids the QEMU rpmbuild/xzmt crash).
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    info "Building Linux RPM packages (native fpm)..."
+    ./node_modules/.bin/electron-builder \
+      --config.extraMetadata.version="$CHART_VERSION" \
+      --linux rpm
+  fi
 
   # Windows — native on macOS (electron-builder auto-downloads Wine for
   # rcedit/NSIS). Wine doesn't work inside Docker under QEMU on arm64.
