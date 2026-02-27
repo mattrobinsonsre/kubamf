@@ -47,9 +47,8 @@ build_electron() {
   # macOS — must run natively (requires macOS for DMG, universal binary, code signing)
   if [[ "$(uname -s)" == "Darwin" ]]; then
     info "Installing dependencies locally for macOS Electron build..."
-    npm cache clean --force 2>/dev/null || true
     rm -rf "$REPO_ROOT/node_modules" 2>/dev/null || true
-    npm ci
+    npm ci --force
     # Regenerate icon natively (container build may have left an empty placeholder)
     node scripts/generate-icon.js
     info "Building macOS Electron packages..."
@@ -61,34 +60,23 @@ build_electron() {
   fi
 
   # Linux — run in electronuserland/builder:wine container
-  # Build AppImage, deb, and tar.gz in container. RPM is built natively
-  # below because fpm's rpmbuild uses xzmt compression which crashes
-  # under QEMU emulation on arm64 hosts.
+  # (has fpm for deb/rpm, all Linux packaging deps)
   info "Building Linux Electron packages (container)..."
   docker_electron bash -c "
     npm ci --ignore-scripts && \
     ./node_modules/.bin/electron-builder \
       --config.extraMetadata.version=${CHART_VERSION} \
-      --linux AppImage deb tar.gz
+      --linux
   "
 
-  # Linux RPM — build natively on macOS (electron-builder downloads its own
-  # macOS-native fpm binary; avoids the QEMU rpmbuild/xzmt crash).
+  # Windows — build natively on macOS (zip only, no Wine/NSIS needed).
+  # Wine doesn't work under QEMU on arm64 hosts, so NSIS is skipped.
+  # On native amd64 CI runners, the Docker container handles NSIS too.
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    info "Building Linux RPM packages (native fpm)..."
+    info "Building Windows Electron packages (native, zip only)..."
     ./node_modules/.bin/electron-builder \
       --config.extraMetadata.version="$CHART_VERSION" \
-      --linux rpm
-  fi
-
-  # Windows — native on macOS (electron-builder auto-downloads Wine for
-  # rcedit/NSIS). Wine doesn't work inside Docker under QEMU on arm64.
-  # On native amd64 CI runners, Docker handles everything (native Wine).
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    info "Building Windows Electron packages (native + Wine)..."
-    ./node_modules/.bin/electron-builder \
-      --config.extraMetadata.version="$CHART_VERSION" \
-      --win
+      --win -c.win.target=zip
   else
     info "Building Windows Electron packages (container)..."
     docker_electron bash -c "
