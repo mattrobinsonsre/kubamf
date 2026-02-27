@@ -19,7 +19,7 @@ case "$target" in
     ;;
   all)
     info "Running all tests..."
-    docker_node sh -c "npm ci --ignore-scripts && npm rebuild esbuild && node scripts/test-parallel.js"
+    docker_node sh -c "npm ci --ignore-scripts && npm rebuild esbuild && npx jest src/backend --testPathPattern=src/backend --passWithNoTests && npx vitest run src/"
     ;;
   *)
     error "Unknown target: $target"
