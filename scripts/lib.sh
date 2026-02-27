@@ -30,7 +30,7 @@ docker_node() {
     -v kubamf-npmcache:/root/.npm \
     -w /project \
     -e CI="${CI:-}" \
-    public.ecr.aws/docker/library/node:18-alpine \
+    node:18-alpine \
     "$@"
 }
 

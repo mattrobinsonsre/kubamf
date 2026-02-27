@@ -1,7 +1,7 @@
 # Minimal release image — copies pre-built dist/ only.
 # No npm install, no esbuild, no QEMU compilation issues.
 # Build the web app first: scripts/build.sh web
-FROM public.ecr.aws/docker/library/node:18-alpine
+FROM node:18-alpine
 
 WORKDIR /app
 
