@@ -46,7 +46,7 @@ function getExecKubeConfig(sessionToken) {
 // Detect available shells in a container
 router.post('/detect-shells', async (req, res) => {
   try {
-    const { namespace, pod, container, context } = req.body
+    const { namespace, pod, container } = req.body
 
     // Get per-request KubeConfig with explicit token for WebSocket exec.
     // Must capture the token here (in the Express handler) before it's
@@ -146,7 +146,7 @@ function handleExecWebSocket(ws, req) {
 
       // Initial connection
       if (!execStream) {
-        const { namespace, pod, container, context, shell, cols, rows } = data
+        const { namespace, pod, container, context, shell } = data
 
         console.log(`[EXEC] Starting exec: ${namespace}/${pod}/${container} shell=${shell}`)
 

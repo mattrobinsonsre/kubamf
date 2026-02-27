@@ -1,5 +1,4 @@
 const os = require('os')
-const path = require('path')
 
 // Mock dependencies
 jest.mock('fs')
@@ -304,7 +303,7 @@ describe('ConfigManager', () => {
 
     test('should reload configuration', () => {
       ConfigManager = require('./config')
-      const originalPort = ConfigManager.get('server.port')
+      ConfigManager.get('server.port')
 
       process.env.PORT = '6000'
       ConfigManager.reload()

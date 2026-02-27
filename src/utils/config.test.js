@@ -3,19 +3,18 @@ import { FrontendConfig } from './config'
 
 describe('FrontendConfig', () => {
   let originalWindow
-  let originalEnv
 
   beforeEach(() => {
     // Store original values
     originalWindow = global.window
-    originalEnv = import.meta.env
 
     // Mock window object
     global.window = {
       electronAPI: undefined,
       __STATIC_HOSTING__: undefined,
       KUBAMF_API_HOST: undefined,
-      navigator: { userAgent: 'test-agent' }
+      navigator: { userAgent: 'test-agent' },
+      location: { origin: 'http://localhost:5173', hostname: 'localhost', href: 'http://localhost:5173/' }
     }
 
     // Mock import.meta.env

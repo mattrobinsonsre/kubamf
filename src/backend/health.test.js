@@ -120,7 +120,10 @@ describe('HealthChecker', () => {
         mtime: new Date('2024-01-01T10:00:00Z')
       }
 
-      fs.existsSync.mockReturnValue(true)
+      // Return false for in-cluster SA token path, true for kubeconfig
+      fs.existsSync.mockImplementation((p) =>
+        p !== '/var/run/secrets/kubernetes.io/serviceaccount/token'
+      )
       fs.statSync.mockReturnValue(mockStats)
 
       const result = healthChecker.checkKubeConfig()
@@ -142,7 +145,9 @@ describe('HealthChecker', () => {
     })
 
     test('should handle kubeconfig access error', () => {
-      fs.existsSync.mockReturnValue(true)
+      fs.existsSync.mockImplementation((p) =>
+        p !== '/var/run/secrets/kubernetes.io/serviceaccount/token'
+      )
       fs.statSync.mockImplementation(() => {
         throw new Error('Permission denied')
       })
@@ -155,7 +160,9 @@ describe('HealthChecker', () => {
 
     test('should use custom KUBECONFIG path', () => {
       process.env.KUBECONFIG = '/custom/kubeconfig'
-      fs.existsSync.mockReturnValue(true)
+      fs.existsSync.mockImplementation((p) =>
+        p !== '/var/run/secrets/kubernetes.io/serviceaccount/token'
+      )
       fs.statSync.mockReturnValue({ size: 1024, mtime: new Date() })
 
       const result = healthChecker.checkKubeConfig()
@@ -302,7 +309,9 @@ describe('HealthChecker', () => {
   describe('Full Health Check', () => {
     test('should perform comprehensive health check', async () => {
       // Setup mocks for successful health check
-      fs.existsSync.mockReturnValue(true)
+      fs.existsSync.mockImplementation((p) =>
+        p !== '/var/run/secrets/kubernetes.io/serviceaccount/token'
+      )
       fs.statSync.mockReturnValue({ size: 1024, mtime: new Date() })
 
       spawn.mockImplementation((cmd, args) => {
@@ -336,7 +345,9 @@ describe('HealthChecker', () => {
 
     test('should report degraded status with some issues', async () => {
       // Setup mocks for degraded state
-      fs.existsSync.mockReturnValue(true)
+      fs.existsSync.mockImplementation((p) =>
+        p !== '/var/run/secrets/kubernetes.io/serviceaccount/token'
+      )
       fs.statSync.mockReturnValue({ size: 1024, mtime: new Date() })
 
       spawn.mockImplementation((cmd, args) => {
@@ -381,7 +392,9 @@ describe('HealthChecker', () => {
 
     test('should return cached health status', async () => {
       // Perform a full health check first
-      fs.existsSync.mockReturnValue(true)
+      fs.existsSync.mockImplementation((p) =>
+        p !== '/var/run/secrets/kubernetes.io/serviceaccount/token'
+      )
       fs.statSync.mockReturnValue({ size: 1024, mtime: new Date() })
       spawn.mockReturnValue(createMockKubectlResponse('Client Version: v1.28.0'))
       mockKubeConfig.getContexts.mockResolvedValue({ contexts: [] })
@@ -415,37 +428,36 @@ describe('HealthChecker', () => {
 
   describe('Readiness Check', () => {
     test('should report ready when dependencies are available', async () => {
-      fs.existsSync.mockReturnValue(true)
+      fs.existsSync.mockImplementation((p) =>
+        p !== '/var/run/secrets/kubernetes.io/serviceaccount/token'
+      )
       fs.statSync.mockReturnValue({ size: 1024, mtime: new Date() })
-      spawn.mockReturnValue(createMockKubectlResponse('Client Version: v1.28.0'))
 
       const result = await healthChecker.getReadiness()
 
       expect(result.ready).toBe(true)
-      expect(result.checks.kubectl).toBe(true)
       expect(result.checks.kubeconfig).toBe(true)
     })
 
-    test('should report not ready when kubectl unavailable', async () => {
-      fs.existsSync.mockReturnValue(true)
-      spawn.mockReturnValue(createMockKubectlResponse('', 'not found', 1))
+    test('should report not ready when kubeconfig missing', async () => {
+      fs.existsSync.mockReturnValue(false)
 
       const result = await healthChecker.getReadiness()
 
       expect(result.ready).toBe(false)
-      expect(result.reason).toBe('Dependencies not available')
-      expect(result.checks.kubectl).toBe(false)
+      expect(result.reason).toBe('No Kubernetes credentials available')
+      expect(result.checks.kubeconfig).toBe(false)
     })
 
     test('should handle readiness check errors', async () => {
-      spawn.mockImplementation(() => {
-        throw new Error('Spawn failed')
+      fs.existsSync.mockImplementation(() => {
+        throw new Error('Stat failed')
       })
 
       const result = await healthChecker.getReadiness()
 
       expect(result.ready).toBe(false)
-      expect(result.reason).toBe('Spawn failed')
+      expect(result.checks.kubeconfig).toBe(false)
     })
   })
 

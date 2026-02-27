@@ -346,7 +346,7 @@ describe('API Utils', () => {
 
   describe('API Configuration', () => {
     it('should create axios instance with correct base URL', async () => {
-      const axiosModule = await import('axios')
+      await import('axios')
 
       vi.doMock('axios', () => ({
         default: {

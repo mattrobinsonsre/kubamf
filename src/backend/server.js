@@ -235,12 +235,7 @@ class KubeConfigManager {
   }
 
   async checkConnection(contextName) {
-    try {
-      const result = await kubernetesService.checkConnection(contextName)
-      return result
-    } catch (error) {
-      throw error
-    }
+    return await kubernetesService.checkConnection(contextName)
   }
 }
 
@@ -1088,7 +1083,7 @@ app.delete('/api/resources/:context/:kind/:namespace?/:name', async (req, res) =
 
     // Use kubernetesService to delete the resource
     const apiVersion = req.query.apiVersion
-    const result = await kubernetesService.deleteResource(context, kind, name, namespace, apiVersion)
+    await kubernetesService.deleteResource(context, kind, name, namespace, apiVersion)
 
     res.json({
       success: true,

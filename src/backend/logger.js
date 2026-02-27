@@ -100,8 +100,6 @@ class Logger {
 
         // Log response
         const duration = Date.now() - startTime
-        const level = res.statusCode >= 400 ? 'error' : 'info'
-
         this.logger.info('HTTP Response', {
           method: req.method,
           path: req.path,

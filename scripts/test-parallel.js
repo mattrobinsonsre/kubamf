@@ -133,14 +133,11 @@ async function runTests() {
     'run',
     'src/',
     '--reporter=verbose',
-    '--coverage',
     '--coverage.enabled',
     '--coverage.reporter=text',
     '--coverage.reporter=lcov',
     '--coverage.reporter=json-summary',
-    '--coverage.reportsDirectory=coverage/frontend',
-    `--pool.threads.maxThreads=${workers}`,
-    `--pool.threads.minThreads=${Math.max(1, Math.floor(workers / 2))}`
+    '--coverage.reportsDirectory=coverage/frontend'
   ]
 
   if (isCI) {

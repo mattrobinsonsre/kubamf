@@ -20,7 +20,7 @@ class BaseAuthProvider {
   }
 
   // Setup provider-specific routes (optional)
-  setupRoutes(router) {
+  setupRoutes(_router) {
     // Default implementation - no routes
   }
 
@@ -74,7 +74,7 @@ class BaseAuthProvider {
   }
 
   // Helper method to check if user has required permissions
-  hasPermission(user, permission) {
+  hasPermission(user, _permission) {
     // Default implementation - all authenticated users have all permissions
     // Override in subclasses for more granular control
     return !!user
