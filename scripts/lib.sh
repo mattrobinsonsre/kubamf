@@ -27,6 +27,7 @@ error()   { printf '\033[1;31m==> ERROR: %s\033[0m\n' "$*" >&2; }
 docker_node() {
   docker run --rm \
     -v "$REPO_ROOT:/project" \
+    -v /project/node_modules \
     -v kubamf-npmcache:/root/.npm \
     -w /project \
     -e CI="${CI:-}" \
@@ -39,6 +40,7 @@ docker_node() {
 docker_electron() {
   docker run --rm \
     -v "$REPO_ROOT:/project" \
+    -v /project/node_modules \
     -v kubamf-electron-cache:/root/.cache/electron \
     -v kubamf-electron-builder-cache:/root/.cache/electron-builder \
     -v kubamf-npmcache:/root/.npm \
