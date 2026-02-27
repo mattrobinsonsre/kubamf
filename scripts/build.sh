@@ -28,7 +28,7 @@ build_web() {
   info "Building web app in container (VERSION=${VERSION})..."
   cd "$REPO_ROOT"
 
-  docker_node sh -c "npm ci --force && npm run build"
+  docker_node sh -c "npm ci --ignore-scripts && npm rebuild esbuild && npm run build"
 
   success "Web app built: dist/frontend/ + dist/backend/"
 }
@@ -59,14 +59,25 @@ build_electron() {
     info "Skipping macOS Electron build (not on macOS)"
   fi
 
-  # Linux + Windows — run in electronuserland/builder:wine container
-  # (Wine is needed for Windows NSIS installers)
-  info "Building Linux + Windows Electron packages (container)..."
+  # Linux — run in electronuserland/builder:wine container
+  # (has fpm for deb/rpm, all Linux packaging deps)
+  info "Building Linux Electron packages (container)..."
   docker_electron bash -c "
-    npm ci --force --ignore-scripts && \
+    npm ci && \
     ./node_modules/.bin/electron-builder \
       --config.extraMetadata.version=${CHART_VERSION} \
-      --linux --win
+      --linux
+  "
+
+  # Windows — zip archives (NSIS requires Wine which doesn't work under QEMU
+  # on arm64 hosts; on native amd64 CI runners, remove -c.win.target=zip
+  # to get NSIS installers)
+  info "Building Windows Electron packages (container, zip only)..."
+  docker_electron bash -c "
+    npm ci && \
+    ./node_modules/.bin/electron-builder \
+      --config.extraMetadata.version=${CHART_VERSION} \
+      --win -c.win.target=zip
   "
 
   success "Electron packages written to dist-electron/"
