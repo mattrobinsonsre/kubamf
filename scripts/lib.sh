@@ -26,6 +26,7 @@ error()   { printf '\033[1;31m==> ERROR: %s\033[0m\n' "$*" >&2; }
 # Uses named volumes for npm cache to speed up repeated runs.
 docker_node() {
   docker run --rm \
+    --memory=4g \
     -v "$REPO_ROOT:/project" \
     -v /project/node_modules \
     -v kubamf-npmcache:/root/.npm \
