@@ -1,0 +1,22 @@
+# Minimal release image — copies pre-built dist/ only.
+# No npm install, no esbuild, no QEMU compilation issues.
+# Build the web app first: scripts/build.sh web
+FROM public.ecr.aws/docker/library/node:18-alpine
+
+WORKDIR /app
+
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S kubamf -u 1001
+
+COPY dist/backend/ ./dist/backend/
+COPY dist/frontend/ ./dist/frontend/
+
+RUN chmod -R a+rX ./dist/
+
+USER kubamf
+
+EXPOSE 3001
+
+ENV NODE_ENV=production
+
+CMD ["node", "dist/backend/index.js"]

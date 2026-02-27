@@ -2,6 +2,10 @@
 # Build web app, Electron packages, and/or Docker images.
 # Usage: scripts/build.sh [web|electron|images|all] [--push]
 # Default: all
+#
+# Web + lint + test run inside containers (docker_node / docker_electron).
+# Electron macOS builds run natively (requires macOS host for DMG/signing).
+# Docker images use Dockerfile.release (no npm install, no QEMU compilation).
 
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
@@ -21,15 +25,15 @@ done
 
 # ── Build web app (Vite frontend + ncc backend) ─────────
 build_web() {
-  info "Building web app (VERSION=${VERSION})..."
+  info "Building web app in container (VERSION=${VERSION})..."
   cd "$REPO_ROOT"
 
-  npm run build
+  docker_node sh -c "npm ci && npm run build"
 
   success "Web app built: dist/frontend/ + dist/backend/"
 }
 
-# ── Build Electron packages for all platforms ────────────
+# ── Build Electron packages ────────────────────────────
 build_electron() {
   # Verify web build output exists
   if [[ ! -d "$REPO_ROOT/dist/frontend" ]] || [[ ! -d "$REPO_ROOT/dist/backend" ]]; then
@@ -40,16 +44,36 @@ build_electron() {
   info "Building Electron packages (version=${CHART_VERSION})..."
   cd "$REPO_ROOT"
 
-  # Build all platforms; electron-builder reads the "build" config from package.json
-  npx electron-builder \
-    --config.extraMetadata.version="$CHART_VERSION" \
-    --mac --linux --win
+  # macOS — must run natively (requires macOS for DMG, universal binary, code signing)
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    info "Building macOS Electron packages (native)..."
+    npx electron-builder \
+      --config.extraMetadata.version="$CHART_VERSION" \
+      --mac
+  else
+    info "Skipping macOS Electron build (not on macOS)"
+  fi
+
+  # Linux + Windows — run in electronuserland/builder:wine container
+  info "Building Linux + Windows Electron packages (container)..."
+  docker_electron bash -c "
+    npm ci && \
+    npx electron-builder \
+      --config.extraMetadata.version=${CHART_VERSION} \
+      --linux --win
+  "
 
   success "Electron packages written to dist-electron/"
 }
 
 # ── Build Docker images ──────────────────────────────────
 build_images() {
+  # Verify web build output exists
+  if [[ ! -d "$REPO_ROOT/dist/frontend" ]] || [[ ! -d "$REPO_ROOT/dist/backend" ]]; then
+    error "dist/frontend/ or dist/backend/ missing — run 'scripts/build.sh web' first"
+    exit 1
+  fi
+
   if $PUSH; then
     build_images_multiarch
   else
@@ -61,6 +85,7 @@ build_images_local() {
   info "Building Docker image (single-arch, local)..."
 
   docker build \
+    -f "$REPO_ROOT/Dockerfile.release" \
     -t "kubamf:${VERSION}" \
     -t "kubamf:dev" \
     "$REPO_ROOT"
@@ -69,7 +94,7 @@ build_images_local() {
 }
 
 build_images_multiarch() {
-  info "Building multi-arch Docker image..."
+  info "Building multi-arch Docker image (no QEMU compilation — just COPY)..."
 
   local tags="-t ${REGISTRY}/kubamf:${VERSION}"
   # Tag :latest only for semver tags (vX.Y.Z)
@@ -78,6 +103,7 @@ build_images_multiarch() {
   fi
 
   docker buildx build \
+    -f "$REPO_ROOT/Dockerfile.release" \
     --platform linux/amd64,linux/arm64 \
     ${=tags} --push "$REPO_ROOT"
 
