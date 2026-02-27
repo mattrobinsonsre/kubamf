@@ -47,7 +47,7 @@ build_electron() {
   # macOS — must run natively (requires macOS for DMG, universal binary, code signing)
   if [[ "$(uname -s)" == "Darwin" ]]; then
     info "Installing dependencies locally for macOS Electron build..."
-    rm -rf "$REPO_ROOT/node_modules"
+    rm -rf "$REPO_ROOT/node_modules" 2>/dev/null || true
     npm ci
     # Regenerate icon natively (container build may have left an empty placeholder)
     node scripts/generate-icon.js
@@ -63,22 +63,29 @@ build_electron() {
   # (has fpm for deb/rpm, all Linux packaging deps)
   info "Building Linux Electron packages (container)..."
   docker_electron bash -c "
-    npm ci && \
+    npm ci --ignore-scripts && \
     ./node_modules/.bin/electron-builder \
       --config.extraMetadata.version=${CHART_VERSION} \
       --linux
   "
 
-  # Windows — zip archives (NSIS requires Wine which doesn't work under QEMU
-  # on arm64 hosts; on native amd64 CI runners, remove -c.win.target=zip
-  # to get NSIS installers)
-  info "Building Windows Electron packages (container, zip only)..."
-  docker_electron bash -c "
-    npm ci && \
+  # Windows — build natively on macOS (zip only, no Wine needed)
+  # Wine doesn't work under QEMU on arm64 hosts, so NSIS is skipped.
+  # On native amd64 CI runners, the Docker container handles NSIS too.
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    info "Building Windows Electron packages (native, zip only)..."
     ./node_modules/.bin/electron-builder \
-      --config.extraMetadata.version=${CHART_VERSION} \
+      --config.extraMetadata.version="$CHART_VERSION" \
       --win -c.win.target=zip
-  "
+  else
+    info "Building Windows Electron packages (container)..."
+    docker_electron bash -c "
+      npm ci --ignore-scripts && \
+      ./node_modules/.bin/electron-builder \
+        --config.extraMetadata.version=${CHART_VERSION} \
+        --win
+    "
+  fi
 
   success "Electron packages written to dist-electron/"
 }
