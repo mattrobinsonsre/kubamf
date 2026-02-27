@@ -46,7 +46,8 @@ build_electron() {
 
   # macOS — must run natively (requires macOS for DMG, universal binary, code signing)
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    info "Building macOS Electron packages (native)..."
+    info "Installing dependencies locally for macOS Electron build..."
+    npm ci
     npx electron-builder \
       --config.extraMetadata.version="$CHART_VERSION" \
       --mac
