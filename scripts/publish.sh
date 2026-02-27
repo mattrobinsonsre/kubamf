@@ -131,7 +131,7 @@ publish_release() {
     local base="$(basename "$f")"
     case "$base" in
       *.yml|*.yaml|*.blockmap|builder-debug.yml|builder-effective-config.yaml) continue ;;
-      mac-universal|linux-unpacked|linux-arm64-unpacked|win-unpacked|win-arm64-unpacked) continue ;;
+      mac-universal|mac-universal-*-temp|linux-unpacked|linux-arm64-unpacked|win-unpacked|win-arm64-unpacked) continue ;;
       *) cp "$f" "$release_dir/" ;;
     esac
   done
