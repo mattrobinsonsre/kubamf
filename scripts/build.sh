@@ -44,8 +44,11 @@ build_electron() {
   info "Building Electron packages (version=${CHART_VERSION})..."
   cd "$REPO_ROOT"
 
-  # Install dependencies locally (needed for all platforms)
+  # Install dependencies locally (needed for all platforms).
+  # Clean node_modules first — the Docker web build may leave stale entries
+  # that confuse npm ci (ENOTEMPTY errors).
   info "Installing dependencies locally..."
+  rm -rf "$REPO_ROOT/node_modules"
   npm ci
   # Regenerate icon natively (container build may have left an empty placeholder)
   node scripts/generate-icon.js
@@ -58,15 +61,16 @@ build_electron() {
       --mac
   fi
 
-  # Linux — cross-compile natively (electron-builder's app-builder handles
-  # deb/rpm/AppImage without needing Linux tools)
+  # Linux — cross-compile from macOS. electron-builder downloads the
+  # correct Electron binary per arch and handles AppImage/deb/tar.gz.
+  # On CI, native Linux runners should be used for best reliability.
   info "Building Linux Electron packages..."
   npx electron-builder \
     --config.extraMetadata.version="$CHART_VERSION" \
-    --linux
+    --linux --arm64 --x64
 
-  # Windows — NSIS requires Wine; zip works without it.
-  # On CI with native Linux runners, use docker_electron instead.
+  # Windows — zip only from macOS (NSIS requires Wine).
+  # On CI with Wine or native Windows runners, NSIS installers are built.
   if command -v wine &>/dev/null; then
     info "Building Windows Electron packages (Wine available)..."
     npx electron-builder \
