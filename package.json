@@ -203,11 +203,10 @@
       "recommends": [
         "kubectl"
       ],
-      "priority": "optional",
-      "section": "devel"
+      "priority": "optional"
     },
     "rpm": {
-      "requires": [
+      "depends": [
         "gtk3",
         "libnotify",
         "nss",
@@ -216,11 +215,7 @@
         "xdg-utils",
         "at-spi2-atk",
         "libsecret"
-      ],
-      "suggests": [
-        "kubectl"
-      ],
-      "group": "Development/Tools"
+      ]
     },
     "appImage": {
       "artifactName": "${productName}-${version}-${arch}.AppImage",
