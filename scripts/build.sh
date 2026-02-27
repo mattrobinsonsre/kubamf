@@ -28,7 +28,7 @@ build_web() {
   info "Building web app in container (VERSION=${VERSION})..."
   cd "$REPO_ROOT"
 
-  docker_node sh -c "npm ci --ignore-scripts && npm run build"
+  docker_node sh -c "npm ci --ignore-scripts --omit=optional && npm run build"
 
   success "Web app built: dist/frontend/ + dist/backend/"
 }
@@ -44,45 +44,30 @@ build_electron() {
   info "Building Electron packages (version=${CHART_VERSION})..."
   cd "$REPO_ROOT"
 
-  # Install dependencies locally (needed for all platforms).
-  # Clean node_modules first — the Docker web build may leave stale entries
-  # that confuse npm ci (ENOTEMPTY errors).
-  info "Installing dependencies locally..."
-  rm -rf "$REPO_ROOT/node_modules"
-  npm ci
-  # Regenerate icon natively (container build may have left an empty placeholder)
-  node scripts/generate-icon.js
-
   # macOS — must run natively (requires macOS for DMG, universal binary, code signing)
   if [[ "$(uname -s)" == "Darwin" ]]; then
+    info "Installing dependencies locally for macOS Electron build..."
+    rm -rf "$REPO_ROOT/node_modules"
+    npm ci
+    # Regenerate icon natively (container build may have left an empty placeholder)
+    node scripts/generate-icon.js
     info "Building macOS Electron packages..."
-    npx electron-builder \
+    ./node_modules/.bin/electron-builder \
       --config.extraMetadata.version="$CHART_VERSION" \
       --mac
-  fi
-
-  # Linux — cross-compile from macOS. electron-builder downloads the
-  # correct Electron binary per arch and handles AppImage/deb/tar.gz.
-  # On CI, native Linux runners should be used for best reliability.
-  info "Building Linux Electron packages..."
-  npx electron-builder \
-    --config.extraMetadata.version="$CHART_VERSION" \
-    --linux --arm64 --x64
-
-  # Windows — zip only from macOS (NSIS requires Wine).
-  # On CI with Wine or native Windows runners, NSIS installers are built.
-  if command -v wine &>/dev/null; then
-    info "Building Windows Electron packages (Wine available)..."
-    npx electron-builder \
-      --config.extraMetadata.version="$CHART_VERSION" \
-      --win
   else
-    info "Building Windows Electron packages (zip only — Wine not available for NSIS)..."
-    npx electron-builder \
-      --config.extraMetadata.version="$CHART_VERSION" \
-      --win --x64 --arm64 \
-      -c.win.target=zip
+    info "Skipping macOS Electron build (not on macOS)"
   fi
+
+  # Linux + Windows — run in electronuserland/builder:wine container
+  # (Wine is needed for Windows NSIS installers)
+  info "Building Linux + Windows Electron packages (container)..."
+  docker_electron bash -c "
+    npm ci && \
+    ./node_modules/.bin/electron-builder \
+      --config.extraMetadata.version=${CHART_VERSION} \
+      --linux --win
+  "
 
   success "Electron packages written to dist-electron/"
 }

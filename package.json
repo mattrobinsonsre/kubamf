@@ -221,13 +221,7 @@
       ]
     },
     "appImage": {
-      "artifactName": "${productName}-${version}-${arch}.AppImage",
-      "desktop": {
-        "Terminal": false,
-        "Type": "Application",
-        "Categories": "Development;Utility;",
-        "StartupWMClass": "kubamf"
-      }
+      "artifactName": "${productName}-${version}-${arch}.AppImage"
     },
     "nsis": {
       "oneClick": false,

@@ -11,15 +11,15 @@ target="${1:-all}"
 case "$target" in
   backend)
     info "Running backend tests (Jest)..."
-    docker_node sh -c "npm ci --ignore-scripts && npx jest src/backend --testPathPattern=src/backend"
+    docker_node sh -c "npm ci --ignore-scripts --omit=optional && npx jest src/backend --testPathPattern=src/backend"
     ;;
   frontend)
     info "Running frontend tests (Vitest)..."
-    docker_node sh -c "npm ci --ignore-scripts && npx vitest run src/"
+    docker_node sh -c "npm ci --ignore-scripts --omit=optional && npx vitest run src/"
     ;;
   all)
     info "Running all tests..."
-    docker_node sh -c "npm ci --ignore-scripts && node scripts/test-parallel.js"
+    docker_node sh -c "npm ci --ignore-scripts --omit=optional && node scripts/test-parallel.js"
     ;;
   *)
     error "Unknown target: $target"
