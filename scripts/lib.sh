@@ -8,6 +8,8 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${(%):-%x}")/.." && pwd)"
 
 # ── Version info ──────────────────────────────────────────
+# Refresh git index first — Docker bind mounts can desync stat cache on macOS
+git -C "$REPO_ROOT" update-index --refresh &>/dev/null || true
 VERSION="${VERSION:-$(git -C "$REPO_ROOT" describe --tags --always --dirty 2>/dev/null || echo "dev")}"
 CHART_VERSION="${VERSION#v}"
 GIT_COMMIT="${GIT_COMMIT:-$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo "unknown")}"
