@@ -28,7 +28,7 @@ build_web() {
   info "Building web app in container (VERSION=${VERSION})..."
   cd "$REPO_ROOT"
 
-  docker_node sh -c "npm ci --ignore-scripts && npm run build"
+  docker_node sh -c "npm ci --force && npm run build"
 
   success "Web app built: dist/frontend/ + dist/backend/"
 }
@@ -49,8 +49,6 @@ build_electron() {
     info "Installing dependencies locally for macOS Electron build..."
     rm -rf "$REPO_ROOT/node_modules"
     npm ci
-    # dmg-license is not in package.json (breaks Linux containers), install for macOS only
-    npm install dmg-license --no-save
     # Regenerate icon natively (container build may have left an empty placeholder)
     node scripts/generate-icon.js
     info "Building macOS Electron packages..."
@@ -65,7 +63,7 @@ build_electron() {
   # (Wine is needed for Windows NSIS installers)
   info "Building Linux + Windows Electron packages (container)..."
   docker_electron bash -c "
-    npm ci --ignore-scripts && \
+    npm ci --force --ignore-scripts && \
     ./node_modules/.bin/electron-builder \
       --config.extraMetadata.version=${CHART_VERSION} \
       --linux --win
