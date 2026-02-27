@@ -31,7 +31,7 @@ local_resource(
 # Kubamf App
 # ---------------------------------------------------------------------------
 docker_build(
-    'ghcr.io/kubamf/kubamf',
+    'ghcr.io/mattrobinsonsre/kubamf',
     '.',
     dockerfile='Dockerfile',
     ignore=['charts/', '.github/', 'tests/', '*.md'],

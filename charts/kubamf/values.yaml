@@ -3,7 +3,7 @@ enabled: true
 replicaCount: 1
 
 image:
-  repository: ghcr.io/kubamf/kubamf
+  repository: ghcr.io/mattrobinsonsre/kubamf
   tag: ""  # defaults to appVersion
   pullPolicy: IfNotPresent
 
