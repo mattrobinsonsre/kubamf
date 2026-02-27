@@ -47,6 +47,7 @@ build_electron() {
   # macOS — must run natively (requires macOS for DMG, universal binary, code signing)
   if [[ "$(uname -s)" == "Darwin" ]]; then
     info "Installing dependencies locally for macOS Electron build..."
+    npm cache clean --force 2>/dev/null || true
     rm -rf "$REPO_ROOT/node_modules" 2>/dev/null || true
     npm ci
     # Regenerate icon natively (container build may have left an empty placeholder)
