@@ -28,7 +28,7 @@ build_web() {
   info "Building web app in container (VERSION=${VERSION})..."
   cd "$REPO_ROOT"
 
-  docker_node sh -c "npm ci && npm run build"
+  docker_node sh -c "npm ci --ignore-scripts && npm run build"
 
   success "Web app built: dist/frontend/ + dist/backend/"
 }
