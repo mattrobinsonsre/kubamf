@@ -69,29 +69,14 @@ build_electron() {
       --linux
   "
 
-  # Windows — two-stage build on macOS:
-  #   1. Docker: build unpacked app (no Wine needed, just downloads Electron + copies files)
-  #   2. Native: package NSIS installers + zip (electron-builder auto-downloads Wine)
-  # Wine doesn't work inside Docker under QEMU on arm64 hosts, but works
-  # fine natively on macOS where electron-builder manages its own Wine binary.
-  # On Linux CI runners, Docker handles everything in one step (native Wine).
+  # Windows — native on macOS (electron-builder auto-downloads Wine for
+  # rcedit/NSIS). Wine doesn't work inside Docker under QEMU on arm64.
+  # On native amd64 CI runners, Docker handles everything (native Wine).
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    info "Building Windows app in container (unpacked)..."
-    docker_electron bash -c "
-      npm ci --ignore-scripts && \
-      ./node_modules/.bin/electron-builder \
-        --config.extraMetadata.version=${CHART_VERSION} \
-        --win --dir
-    "
-    info "Packaging Windows NSIS installers (native, Wine)..."
+    info "Building Windows Electron packages (native + Wine)..."
     ./node_modules/.bin/electron-builder \
       --config.extraMetadata.version="$CHART_VERSION" \
-      --prepackaged dist-electron/win-unpacked \
-      --win --x64
-    ./node_modules/.bin/electron-builder \
-      --config.extraMetadata.version="$CHART_VERSION" \
-      --prepackaged dist-electron/win-arm64-unpacked \
-      --win --arm64
+      --win
   else
     info "Building Windows Electron packages (container)..."
     docker_electron bash -c "
