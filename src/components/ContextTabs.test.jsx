@@ -204,7 +204,10 @@ describe('ContextTabs', () => {
   // @tests-contract ContextTabs.truncate
   it('should truncate long context names to 20 characters with ellipsis', async () => {
     const longName = 'very-long-context-name-that-exceeds-limit'
-    const mockContexts = [{ name: longName, current: true }]
+    const mockContexts = [
+      { name: longName, current: true },
+      { name: 'other-ctx', current: false },
+    ]
 
     kubeApi.getContexts.mockResolvedValue(mockContexts)
 
@@ -333,6 +336,7 @@ describe('ContextTabs', () => {
   it('should make tabs draggable', async () => {
     const mockContexts = [
       { name: 'drag-ctx', current: true },
+      { name: 'other-ctx', current: false },
     ]
 
     kubeApi.getContexts.mockResolvedValue(mockContexts)
