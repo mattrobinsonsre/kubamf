@@ -44,27 +44,41 @@ build_electron() {
   info "Building Electron packages (version=${CHART_VERSION})..."
   cd "$REPO_ROOT"
 
+  # Install dependencies locally (needed for all platforms)
+  info "Installing dependencies locally..."
+  npm ci
+  # Regenerate icon natively (container build may have left an empty placeholder)
+  node scripts/generate-icon.js
+
   # macOS — must run natively (requires macOS for DMG, universal binary, code signing)
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    info "Installing dependencies locally for macOS Electron build..."
-    npm ci
-    # Regenerate icon natively (container build may have left an empty placeholder)
-    node scripts/generate-icon.js
+    info "Building macOS Electron packages..."
     npx electron-builder \
       --config.extraMetadata.version="$CHART_VERSION" \
       --mac
-  else
-    info "Skipping macOS Electron build (not on macOS)"
   fi
 
-  # Linux + Windows — run in electronuserland/builder:wine container
-  info "Building Linux + Windows Electron packages (container)..."
-  docker_electron bash -c "
-    npm ci && \
+  # Linux — cross-compile natively (electron-builder's app-builder handles
+  # deb/rpm/AppImage without needing Linux tools)
+  info "Building Linux Electron packages..."
+  npx electron-builder \
+    --config.extraMetadata.version="$CHART_VERSION" \
+    --linux
+
+  # Windows — NSIS requires Wine; zip works without it.
+  # On CI with native Linux runners, use docker_electron instead.
+  if command -v wine &>/dev/null; then
+    info "Building Windows Electron packages (Wine available)..."
     npx electron-builder \
-      --config.extraMetadata.version=${CHART_VERSION} \
-      --linux --win
-  "
+      --config.extraMetadata.version="$CHART_VERSION" \
+      --win
+  else
+    info "Building Windows Electron packages (zip only — Wine not available for NSIS)..."
+    npx electron-builder \
+      --config.extraMetadata.version="$CHART_VERSION" \
+      --win --x64 --arm64 \
+      -c.win.target=zip
+  fi
 
   success "Electron packages written to dist-electron/"
 }
