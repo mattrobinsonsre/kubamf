@@ -53,55 +53,89 @@ build_electron() {
   info "Building Electron packages (version=${CHART_VERSION})..."
   cd "$REPO_ROOT"
 
+  # ── macOS: native install + icon generation ─────────────
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    # ── macOS host: build ALL platforms natively ──────────────
-    # electron-builder cross-compiles from macOS using:
-    #   - macOS: native DMG/zip with universal binary
-    #   - Linux: downloads per-arch Electron binaries, uses cached
-    #     appimagetool and fpm for packaging (AppImage, deb, rpm, tar.gz)
-    #   - Windows: zip format (no Wine/NSIS dependency)
-    # RPM uses xz compression (set in package.json) — xzmt crashes.
-    # Requires: brew install rpm (for rpmbuild used by fpm)
-    #
-    # Docker-based Linux builds (electronuserland/builder:wine) don't work
-    # on arm64 macOS — the amd64 container runs under QEMU and OOM-kills
-    # during electron-builder's packaging phase.
-
     info "Installing dependencies locally for Electron builds..."
     rm -rf "$REPO_ROOT/node_modules" 2>/dev/null || true
     retry 2 "npm ci (native)" npm ci --force
     node scripts/generate-icon.js
 
+    # macOS packages — must run natively (DMG, universal binary, code signing)
     info "Building macOS Electron packages (DMG + zip, universal)..."
     retry 3 "macOS Electron build" \
       ./node_modules/.bin/electron-builder \
         --config.extraMetadata.version="$CHART_VERSION" \
         --mac
+  else
+    info "Skipping macOS Electron build (not on macOS)"
+  fi
 
-    info "Building Linux Electron packages (AppImage, deb, rpm, tar.gz — x64 + arm64)..."
-    retry 2 "Linux Electron build" \
+  # ── Linux x64: Docker for AppImage + RPM, native for deb/tar.gz ──
+  # AppImage needs Linux appimagetool (not available on macOS).
+  # RPM needs rpmbuild with xzmt support (macOS Homebrew rpmbuild lacks it).
+  # deb/tar.gz work natively via electron-builder's macOS fpm.
+  info "Building Linux x64 AppImage + RPM (container)..."
+  mkdir -p "$REPO_ROOT/node_modules"
+  retry 2 "Linux x64 AppImage + RPM (Docker)" \
+    docker_electron bash -c "
+      npm ci --ignore-scripts && \
+      ./node_modules/.bin/electron-builder \
+        --config.extraMetadata.version=${CHART_VERSION} \
+        --linux AppImage rpm \
+        --x64
+    "
+
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    # Only reinstall if node_modules was corrupted by Docker
+    if ! node -e "require('electron')" 2>/dev/null; then
+      info "Reinstalling native dependencies after Docker..."
+      rm -rf "$REPO_ROOT/node_modules" 2>/dev/null || true
+      retry 2 "npm ci (native)" npm ci --force
+    fi
+
+    info "Building Linux x64 deb + tar.gz (native)..."
+    retry 2 "Linux x64 deb/tar.gz" \
       ./node_modules/.bin/electron-builder \
         --config.extraMetadata.version="$CHART_VERSION" \
-        --linux
+        --linux deb tar.gz \
+        --x64
+  fi
 
-    info "Building Windows Electron packages (zip — x64 + arm64)..."
+  # ── Linux arm64: Docker for AppImage + RPM, native for deb/tar.gz ──
+  info "Building Linux arm64 AppImage + RPM (container)..."
+  mkdir -p "$REPO_ROOT/node_modules"
+  retry 2 "Linux arm64 AppImage + RPM (Docker)" \
+    docker_electron bash -c "
+      npm ci --ignore-scripts && \
+      ./node_modules/.bin/electron-builder \
+        --config.extraMetadata.version=${CHART_VERSION} \
+        --linux AppImage rpm \
+        --arm64
+    "
+
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    if ! node -e "require('electron')" 2>/dev/null; then
+      info "Reinstalling native dependencies after Docker..."
+      rm -rf "$REPO_ROOT/node_modules" 2>/dev/null || true
+      retry 2 "npm ci (native)" npm ci --force
+    fi
+
+    info "Building Linux arm64 deb + tar.gz (native)..."
+    retry 2 "Linux arm64 deb/tar.gz" \
+      ./node_modules/.bin/electron-builder \
+        --config.extraMetadata.version="$CHART_VERSION" \
+        --linux deb tar.gz \
+        --arm64
+  fi
+
+  # ── Windows: NSIS + zip (all arches) ─────────────────────
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    info "Building Windows Electron packages (native, NSIS + zip)..."
     retry 2 "Windows Electron build" \
       ./node_modules/.bin/electron-builder \
         --config.extraMetadata.version="$CHART_VERSION" \
-        --win -c.win.target=zip
+        --win
   else
-    # ── Linux host (CI): use Docker containers ─────────────
-    info "Skipping macOS Electron build (not on macOS)"
-
-    info "Building Linux Electron packages (container)..."
-    retry 2 "Linux Electron build (Docker)" \
-      docker_electron bash -c "
-        npm ci --ignore-scripts && \
-        ./node_modules/.bin/electron-builder \
-          --config.extraMetadata.version=${CHART_VERSION} \
-          --linux
-      "
-
     info "Building Windows Electron packages (container)..."
     retry 2 "Windows Electron build (Docker)" \
       docker_electron bash -c "
