@@ -47,6 +47,8 @@ build_electron() {
   # macOS — must run natively (requires macOS for DMG, universal binary, code signing)
   if [[ "$(uname -s)" == "Darwin" ]]; then
     info "Installing dependencies locally for macOS Electron build..."
+    # Clean npm cache to prevent corruption from Docker volume interactions
+    npm cache clean --force 2>/dev/null || true
     rm -rf "$REPO_ROOT/node_modules" 2>/dev/null || true
     npm ci --force
     # Regenerate icon natively (container build may have left an empty placeholder)
@@ -59,24 +61,35 @@ build_electron() {
     info "Skipping macOS Electron build (not on macOS)"
   fi
 
-  # Linux — run in electronuserland/builder:wine container
-  # (has fpm for deb/rpm, all Linux packaging deps)
-  info "Building Linux Electron packages (container)..."
+  # Linux — run in electronuserland/builder:wine container.
+  # RPM is excluded here because fpm's rpmbuild uses xzmt compression
+  # which crashes under QEMU emulation on arm64 hosts. RPM is built
+  # natively below instead.
+  info "Building Linux Electron packages (container, excluding RPM)..."
   docker_electron bash -c "
     npm ci --ignore-scripts && \
     ./node_modules/.bin/electron-builder \
       --config.extraMetadata.version=${CHART_VERSION} \
-      --linux
+      --linux AppImage deb tar.gz
   "
 
-  # Windows — build natively on macOS (zip only, no Wine/NSIS needed).
-  # Wine doesn't work under QEMU on arm64 hosts, so NSIS is skipped.
-  # On native amd64 CI runners, the Docker container handles NSIS too.
+  # Linux RPM — build natively on macOS. electron-builder downloads its own
+  # macOS-native fpm binary, avoiding the QEMU rpmbuild/xzmt crash.
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    info "Building Windows Electron packages (native, zip only)..."
+    info "Building Linux RPM packages (native fpm)..."
     ./node_modules/.bin/electron-builder \
       --config.extraMetadata.version="$CHART_VERSION" \
-      --win -c.win.target=zip
+      --linux rpm
+  fi
+
+  # Windows — build natively on macOS. electron-builder downloads a macOS
+  # Wine binary for rcedit/NSIS. Wine doesn't work inside Docker under
+  # QEMU on arm64 hosts. On native amd64 CI runners, Docker handles it.
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    info "Building Windows Electron packages (native + Wine)..."
+    ./node_modules/.bin/electron-builder \
+      --config.extraMetadata.version="$CHART_VERSION" \
+      --win
   else
     info "Building Windows Electron packages (container)..."
     docker_electron bash -c "

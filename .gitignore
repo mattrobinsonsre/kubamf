@@ -36,8 +36,9 @@ Thumbs.db
 logs
 *.log
 
-# Generated icons (ephemeral - regenerated from SVG)
+# Generated files (regenerated during build)
 build/icon.png
+public/docs.json
 
 # Test coverage
 coverage/
