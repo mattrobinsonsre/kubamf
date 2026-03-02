@@ -6,6 +6,8 @@
 # Web + lint + test run inside containers (docker_node / docker_electron).
 # Electron macOS builds run natively (requires macOS host for DMG/signing).
 # Docker images use Dockerfile.release (no npm install, no QEMU compilation).
+#
+# All flaky operations (hdiutil, Docker, npm, buildx) use retry loops.
 
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
@@ -28,7 +30,8 @@ build_web() {
   info "Building web app in container (VERSION=${VERSION})..."
   cd "$REPO_ROOT"
 
-  docker_node sh -c "npm ci --ignore-scripts && npm rebuild esbuild && npm run build"
+  retry 3 "web build (Docker)" \
+    docker_node sh -c "npm ci --ignore-scripts && npm rebuild esbuild && npm run build"
 
   success "Web app built: dist/frontend/ + dist/backend/"
 }
@@ -50,13 +53,15 @@ build_electron() {
     # Clean npm cache to prevent corruption from Docker volume interactions
     npm cache clean --force 2>/dev/null || true
     rm -rf "$REPO_ROOT/node_modules" 2>/dev/null || true
-    npm ci --force
+    retry 2 "npm ci (native)" npm ci --force
     # Regenerate icon natively (container build may have left an empty placeholder)
     node scripts/generate-icon.js
     info "Building macOS Electron packages..."
-    ./node_modules/.bin/electron-builder \
-      --config.extraMetadata.version="$CHART_VERSION" \
-      --mac
+    # DMG creation (hdiutil) is flaky on arm64 macOS — retry
+    retry 3 "macOS Electron build (DMG + zip)" \
+      ./node_modules/.bin/electron-builder \
+        --config.extraMetadata.version="$CHART_VERSION" \
+        --mac
   else
     info "Skipping macOS Electron build (not on macOS)"
   fi
@@ -66,20 +71,22 @@ build_electron() {
   # which crashes under QEMU emulation on arm64 hosts. RPM is built
   # natively below instead.
   info "Building Linux Electron packages (container, excluding RPM)..."
-  docker_electron bash -c "
-    npm ci --ignore-scripts && \
-    ./node_modules/.bin/electron-builder \
-      --config.extraMetadata.version=${CHART_VERSION} \
-      --linux AppImage deb tar.gz
-  "
+  retry 2 "Linux Electron build (Docker)" \
+    docker_electron bash -c "
+      npm ci --ignore-scripts && \
+      ./node_modules/.bin/electron-builder \
+        --config.extraMetadata.version=${CHART_VERSION} \
+        --linux AppImage deb tar.gz
+    "
 
   # Linux RPM — build natively on macOS. electron-builder downloads its own
   # macOS-native fpm binary, avoiding the QEMU rpmbuild/xzmt crash.
   if [[ "$(uname -s)" == "Darwin" ]]; then
     info "Building Linux RPM packages (native fpm)..."
-    ./node_modules/.bin/electron-builder \
-      --config.extraMetadata.version="$CHART_VERSION" \
-      --linux rpm
+    retry 2 "Linux RPM build" \
+      ./node_modules/.bin/electron-builder \
+        --config.extraMetadata.version="$CHART_VERSION" \
+        --linux rpm
   fi
 
   # Windows — build natively on macOS. electron-builder downloads a macOS
@@ -87,17 +94,19 @@ build_electron() {
   # QEMU on arm64 hosts. On native amd64 CI runners, Docker handles it.
   if [[ "$(uname -s)" == "Darwin" ]]; then
     info "Building Windows Electron packages (native + Wine)..."
-    ./node_modules/.bin/electron-builder \
-      --config.extraMetadata.version="$CHART_VERSION" \
-      --win
+    retry 2 "Windows Electron build (native)" \
+      ./node_modules/.bin/electron-builder \
+        --config.extraMetadata.version="$CHART_VERSION" \
+        --win
   else
     info "Building Windows Electron packages (container)..."
-    docker_electron bash -c "
-      npm ci --ignore-scripts && \
-      ./node_modules/.bin/electron-builder \
-        --config.extraMetadata.version=${CHART_VERSION} \
-        --win
-    "
+    retry 2 "Windows Electron build (Docker)" \
+      docker_electron bash -c "
+        npm ci --ignore-scripts && \
+        ./node_modules/.bin/electron-builder \
+          --config.extraMetadata.version=${CHART_VERSION} \
+          --win
+      "
   fi
 
   success "Electron packages written to dist-electron/"
@@ -121,11 +130,12 @@ build_images() {
 build_images_local() {
   info "Building Docker image (single-arch, local)..."
 
-  docker build \
-    -f "$REPO_ROOT/Dockerfile.release" \
-    -t "kubamf:${VERSION}" \
-    -t "kubamf:dev" \
-    "$REPO_ROOT"
+  retry 2 "Docker image build" \
+    docker build \
+      -f "$REPO_ROOT/Dockerfile.release" \
+      -t "kubamf:${VERSION}" \
+      -t "kubamf:dev" \
+      "$REPO_ROOT"
 
   success "Local image built: kubamf:${VERSION}"
 }
@@ -139,10 +149,11 @@ build_images_multiarch() {
     tags="$tags -t ${REGISTRY}/kubamf:latest"
   fi
 
-  docker buildx build \
-    -f "$REPO_ROOT/Dockerfile.release" \
-    --platform linux/amd64,linux/arm64 \
-    ${=tags} --push "$REPO_ROOT"
+  retry 3 "multi-arch Docker push" \
+    docker buildx build \
+      -f "$REPO_ROOT/Dockerfile.release" \
+      --platform linux/amd64,linux/arm64 \
+      ${=tags} --push "$REPO_ROOT"
 
   success "Multi-arch image pushed to ${REGISTRY}/kubamf:${VERSION}"
 }

@@ -23,6 +23,28 @@ info()    { printf '\033[1;34m==> %s\033[0m\n' "$*"; }
 success() { printf '\033[1;32m==> %s\033[0m\n' "$*"; }
 error()   { printf '\033[1;31m==> ERROR: %s\033[0m\n' "$*" >&2; }
 
+# ── Retry helper ─────────────────────────────────────────
+# Usage: retry <max_attempts> <description> <command...>
+# Retries on failure with exponential backoff (5s, 10s, 20s, ...).
+retry() {
+  local max_attempts=$1 desc=$2
+  shift 2
+  local attempt=1 delay=5
+  while true; do
+    if "$@"; then
+      return 0
+    fi
+    if (( attempt >= max_attempts )); then
+      error "$desc failed after $max_attempts attempts"
+      return 1
+    fi
+    info "Attempt $attempt/$max_attempts failed for: $desc — retrying in ${delay}s..."
+    sleep $delay
+    (( attempt++ ))
+    (( delay *= 2 ))
+  done
+}
+
 # ── Container helpers ────────────────────────────────────
 # Run a command inside a Node.js container.
 # Uses named volumes for npm cache to speed up repeated runs.

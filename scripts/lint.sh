@@ -6,5 +6,6 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 info "Linting..."
-docker_node sh -c "npm ci --ignore-scripts && npx eslint src/ --max-warnings 0"
+retry 2 "lint (Docker)" \
+  docker_node sh -c "npm ci --ignore-scripts && npx eslint src/ --max-warnings 0"
 success "Lint passed"

@@ -30,8 +30,9 @@ publish_chart() {
   helm package "$HELM_CHART_DIR" --destination "$REPO_ROOT/dist/" \
     --version "$CHART_VERSION" --app-version "$CHART_VERSION"
 
-  # Push to GHCR OCI
-  helm push "$REPO_ROOT/dist/kubamf-${CHART_VERSION}.tgz" "oci://${REGISTRY}"
+  # Push to GHCR OCI (retry for transient registry errors)
+  retry 3 "Helm chart push" \
+    helm push "$REPO_ROOT/dist/kubamf-${CHART_VERSION}.tgz" "oci://${REGISTRY}"
 
   success "Helm chart kubamf:${CHART_VERSION} pushed to oci://${REGISTRY}"
 }
@@ -148,10 +149,11 @@ publish_release() {
   notes=$(generate_release_notes)
 
   info "Creating release..."
-  gh release create "$VERSION" "$release_dir"/* \
-    --repo "$GITHUB_REPO" \
-    --title "Kubamf ${VERSION}" \
-    --notes "$notes"
+  retry 3 "GitHub Release creation" \
+    gh release create "$VERSION" "$release_dir"/* \
+      --repo "$GITHUB_REPO" \
+      --title "Kubamf ${VERSION}" \
+      --notes "$notes"
 
   success "GitHub Release ${VERSION} created"
 }
