@@ -65,8 +65,10 @@ docker_node() {
 
 # Run electron-builder inside the official builder container.
 # Includes Wine (for Windows NSIS), RPM tools, and all Linux deps.
+# 8GB memory for Rosetta emulation on arm64 macOS.
 docker_electron() {
   docker run --rm \
+    --memory=8g \
     -v "$REPO_ROOT:/project" \
     -v /project/node_modules \
     -v kubamf-electron-cache:/root/.cache/electron \
