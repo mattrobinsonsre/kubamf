@@ -209,6 +209,7 @@
       "priority": "optional"
     },
     "rpm": {
+      "compression": "xz",
       "depends": [
         "gtk3",
         "libnotify",

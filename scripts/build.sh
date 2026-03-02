@@ -3,8 +3,9 @@
 # Usage: scripts/build.sh [web|electron|images|all] [--push]
 # Default: all
 #
-# Web + lint + test run inside containers (docker_node / docker_electron).
-# Electron macOS builds run natively (requires macOS host for DMG/signing).
+# Web build runs inside a Docker container (docker_node).
+# Electron builds run natively on macOS (cross-compiles Linux + Windows).
+# On Linux CI hosts, Electron builds use Docker (docker_electron).
 # Docker images use Dockerfile.release (no npm install, no QEMU compilation).
 #
 # All flaky operations (hdiutil, Docker, npm, buildx) use retry loops.
@@ -30,6 +31,11 @@ build_web() {
   info "Building web app in container (VERSION=${VERSION})..."
   cd "$REPO_ROOT"
 
+  # Ensure node_modules directory exists on host — Docker's anonymous volume
+  # (-v /project/node_modules) initializes differently when the bind-mount
+  # target has no directory, causing npm extraction failures on Alpine.
+  mkdir -p "$REPO_ROOT/node_modules"
+
   retry 3 "web build (Docker)" \
     docker_node sh -c "npm ci --ignore-scripts && npm rebuild esbuild && npm run build"
 
@@ -47,18 +53,16 @@ build_electron() {
   info "Building Electron packages (version=${CHART_VERSION})..."
   cd "$REPO_ROOT"
 
-  # macOS — must run natively (requires macOS for DMG, universal binary, code signing)
+  # ── macOS: native install + icon generation ─────────────
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    info "Installing dependencies locally for macOS Electron build..."
-    # Clean npm cache to prevent corruption from Docker volume interactions
-    npm cache clean --force 2>/dev/null || true
+    info "Installing dependencies locally for Electron builds..."
     rm -rf "$REPO_ROOT/node_modules" 2>/dev/null || true
     retry 2 "npm ci (native)" npm ci --force
-    # Regenerate icon natively (container build may have left an empty placeholder)
     node scripts/generate-icon.js
-    info "Building macOS Electron packages..."
-    # DMG creation (hdiutil) is flaky on arm64 macOS — retry
-    retry 3 "macOS Electron build (DMG + zip)" \
+
+    # macOS packages — must run natively (DMG, universal binary, code signing)
+    info "Building macOS Electron packages (DMG + zip, universal)..."
+    retry 3 "macOS Electron build" \
       ./node_modules/.bin/electron-builder \
         --config.extraMetadata.version="$CHART_VERSION" \
         --mac
@@ -66,38 +70,40 @@ build_electron() {
     info "Skipping macOS Electron build (not on macOS)"
   fi
 
-  # Linux — run in electronuserland/builder:wine container.
-  # RPM is excluded here because fpm's rpmbuild uses xzmt compression
-  # which crashes under QEMU emulation on arm64 hosts. RPM is built
-  # natively below instead.
-  info "Building Linux Electron packages (container, excluding RPM)..."
-  retry 2 "Linux Electron build (Docker)" \
+  # ── Linux x64: ALL formats in Docker ────────────────────
+  # The electronuserland/builder:wine image is amd64 — it builds x64
+  # targets. RPM needs rpmbuild (Linux-only), AppImage needs
+  # appimagetool (Linux-only), so all formats must go through Docker.
+  info "Building Linux x64 Electron packages (container)..."
+  retry 2 "Linux x64 Electron build (Docker)" \
     docker_electron bash -c "
       npm ci --ignore-scripts && \
       ./node_modules/.bin/electron-builder \
         --config.extraMetadata.version=${CHART_VERSION} \
-        --linux AppImage deb tar.gz
+        --linux AppImage deb tar.gz rpm \
+        --x64
     "
 
-  # Linux RPM — build natively on macOS. electron-builder downloads its own
-  # macOS-native fpm binary, avoiding the QEMU rpmbuild/xzmt crash.
+  # ── Linux arm64: deb + tar.gz natively on macOS ─────────
+  # AppImage needs Linux appimagetool, RPM needs rpmbuild — both are
+  # Linux-only. For arm64 AppImage/RPM, use native amd64 CI runners.
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    info "Building Linux RPM packages (native fpm)..."
-    retry 2 "Linux RPM build" \
+    info "Building Linux arm64 Electron packages (native, deb + tar.gz)..."
+    retry 2 "Linux arm64 Electron build" \
       ./node_modules/.bin/electron-builder \
         --config.extraMetadata.version="$CHART_VERSION" \
-        --linux rpm
+        --linux deb tar.gz \
+        --arm64
   fi
 
-  # Windows — build natively on macOS. electron-builder downloads a macOS
-  # Wine binary for rcedit/NSIS. Wine doesn't work inside Docker under
-  # QEMU on arm64 hosts. On native amd64 CI runners, Docker handles it.
+  # ── Windows: zip only on macOS, full in Docker ──────────
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    info "Building Windows Electron packages (native + Wine)..."
+    # zip format doesn't need Wine or NSIS
+    info "Building Windows Electron packages (native, zip only)..."
     retry 2 "Windows Electron build (native)" \
       ./node_modules/.bin/electron-builder \
         --config.extraMetadata.version="$CHART_VERSION" \
-        --win
+        --win -c.win.target=zip
   else
     info "Building Windows Electron packages (container)..."
     retry 2 "Windows Electron build (Docker)" \
