@@ -70,40 +70,53 @@ build_electron() {
     info "Skipping macOS Electron build (not on macOS)"
   fi
 
-  # ── Linux x64: ALL formats in Docker ────────────────────
-  # The electronuserland/builder:wine image is amd64 — it builds x64
-  # targets. RPM needs rpmbuild (Linux-only), AppImage needs
-  # appimagetool (Linux-only), so all formats must go through Docker.
-  info "Building Linux x64 Electron packages (container)..."
-  retry 2 "Linux x64 Electron build (Docker)" \
+  # ── Linux x64: Docker for AppImage, native for deb/rpm/tar.gz ──
+  # AppImage needs Linux appimagetool (not available on macOS).
+  # deb/rpm/tar.gz work natively via electron-builder's macOS fpm.
+  info "Building Linux x64 AppImage (container)..."
+  mkdir -p "$REPO_ROOT/node_modules"
+  retry 2 "Linux x64 AppImage (Docker)" \
     docker_electron bash -c "
       npm ci --ignore-scripts && \
       ./node_modules/.bin/electron-builder \
         --config.extraMetadata.version=${CHART_VERSION} \
-        --linux AppImage deb tar.gz rpm \
+        --linux AppImage \
         --x64
     "
 
-  # ── Linux arm64: deb + tar.gz natively on macOS ─────────
-  # AppImage needs Linux appimagetool, RPM needs rpmbuild — both are
-  # Linux-only. For arm64 AppImage/RPM, use native amd64 CI runners.
+  # Re-install native deps after Docker may have dirtied node_modules
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    info "Building Linux arm64 Electron packages (native, deb + tar.gz)..."
-    retry 2 "Linux arm64 Electron build" \
+    # Only reinstall if node_modules was corrupted by Docker
+    if ! node -e "require('electron')" 2>/dev/null; then
+      info "Reinstalling native dependencies after Docker..."
+      rm -rf "$REPO_ROOT/node_modules" 2>/dev/null || true
+      retry 2 "npm ci (native)" npm ci --force
+    fi
+
+    info "Building Linux x64 deb + rpm + tar.gz (native)..."
+    retry 2 "Linux x64 deb/rpm/tar.gz" \
       ./node_modules/.bin/electron-builder \
         --config.extraMetadata.version="$CHART_VERSION" \
-        --linux deb tar.gz \
+        --linux deb rpm tar.gz \
+        --x64
+
+    # ── Linux arm64: deb + rpm + tar.gz natively ───────────
+    # AppImage arm64 needs a Linux arm64 CI runner (not available locally).
+    info "Building Linux arm64 deb + rpm + tar.gz (native)..."
+    retry 2 "Linux arm64 deb/rpm/tar.gz" \
+      ./node_modules/.bin/electron-builder \
+        --config.extraMetadata.version="$CHART_VERSION" \
+        --linux deb rpm tar.gz \
         --arm64
   fi
 
-  # ── Windows: zip only on macOS, full in Docker ──────────
+  # ── Windows: NSIS + zip (all arches) ─────────────────────
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    # zip format doesn't need Wine or NSIS
-    info "Building Windows Electron packages (native, zip only)..."
-    retry 2 "Windows Electron build (native)" \
+    info "Building Windows Electron packages (native, NSIS + zip)..."
+    retry 2 "Windows Electron build" \
       ./node_modules/.bin/electron-builder \
         --config.extraMetadata.version="$CHART_VERSION" \
-        --win -c.win.target=zip
+        --win
   else
     info "Building Windows Electron packages (container)..."
     retry 2 "Windows Electron build (Docker)" \
