@@ -5,7 +5,7 @@
 #
 # Web build runs inside a Docker container (docker_node).
 # Electron builds run natively on macOS (cross-compiles Linux + Windows).
-# RPM packages are Linux CI-only (macOS rpmbuild lacks xzmt support).
+# RPM packages are built in Docker on macOS (macOS rpmbuild lacks xzmt support).
 # On Linux CI hosts, all Electron builds use Docker (docker_electron).
 # Docker images use Dockerfile.release (no npm install, no QEMU compilation).
 #
@@ -62,11 +62,11 @@ build_electron() {
     #     (AppImage, deb, tar.gz work natively)
     #   - Windows: zip only (no Wine/NSIS dependency)
     #
-    # RPM is excluded on macOS: electron-builder's bundled fpm (v1.9.3)
-    # hardcodes --rpm-compression xzmt which macOS rpmbuild doesn't
-    # support. RPMs are built on Linux CI where rpmbuild handles xzmt.
-    # Docker is also not an option — electronuserland/builder:wine (amd64)
-    # OOM-kills under QEMU on arm64 macOS.
+    # RPM uses Docker (electronuserland/builder:wine) because
+    # electron-builder's bundled fpm (v1.9.3) hardcodes --rpm-compression
+    # xzmt which macOS rpmbuild doesn't support. The Docker RPM step is
+    # lightweight — it reuses the unpacked app from the native build
+    # and only runs fpm packaging (no esbuild, no QEMU compilation).
 
     info "Installing dependencies locally for Electron builds..."
     rm -rf "$REPO_ROOT/node_modules" 2>/dev/null || true
@@ -92,6 +92,16 @@ build_electron() {
         --config.extraMetadata.version="$CHART_VERSION" \
         --win -c.win.target=zip \
         --x64 --arm64
+
+    info "Building Linux RPM packages (Docker — x64 + arm64)..."
+    retry 2 "Linux RPM build (Docker)" \
+      docker_electron bash -c "
+        npm ci --ignore-scripts && \
+        ./node_modules/.bin/electron-builder \
+          --config.extraMetadata.version=${CHART_VERSION} \
+          --linux rpm \
+          --x64 --arm64
+      "
 
   else
     # ── Linux host (CI): use Docker containers ─────────────
