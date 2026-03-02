@@ -82,6 +82,7 @@ build_electron() {
     retry 2 "Linux Electron build (Docker)" \
       docker_electron bash -c "
         npm ci --ignore-scripts && \
+        npm rebuild app-builder-bin && \
         ./node_modules/.bin/electron-builder \
           --config.extraMetadata.version=${CHART_VERSION} \
           --linux AppImage deb rpm tar.gz \
@@ -92,6 +93,7 @@ build_electron() {
     retry 2 "Windows Electron build (Docker)" \
       docker_electron bash -c "
         npm ci --ignore-scripts && \
+        npm rebuild app-builder-bin && \
         ./node_modules/.bin/electron-builder \
           --config.extraMetadata.version=${CHART_VERSION} \
           --win \
