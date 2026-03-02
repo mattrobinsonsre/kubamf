@@ -5,7 +5,8 @@
 #
 # Web build runs inside a Docker container (docker_node).
 # Electron builds run natively on macOS (cross-compiles Linux + Windows).
-# On Linux CI hosts, Electron builds use Docker (docker_electron).
+# RPM packages are always built in Docker (macOS rpmbuild lacks xzmt support).
+# On Linux CI hosts, all Electron builds use Docker (docker_electron).
 # Docker images use Dockerfile.release (no npm install, no QEMU compilation).
 #
 # All flaky operations (hdiutil, Docker, npm, buildx) use retry loops.
@@ -53,89 +54,66 @@ build_electron() {
   info "Building Electron packages (version=${CHART_VERSION})..."
   cd "$REPO_ROOT"
 
-  # ── macOS: native install + icon generation ─────────────
   if [[ "$(uname -s)" == "Darwin" ]]; then
+    # ── macOS host: build all platforms natively, except RPM ──────────
+    # electron-builder cross-compiles from macOS using:
+    #   - macOS: native DMG/zip with universal binary
+    #   - Linux: downloads per-arch Electron binaries, packages via fpm
+    #     (AppImage, deb, tar.gz work; RPM fails — see below)
+    #   - Windows: zip only (no Wine/NSIS dependency)
+    #
+    # RPM: electron-builder hardcodes --rpm-compression xzmt which macOS
+    # rpmbuild doesn't support (crashes). RPMs are built in Docker where
+    # Linux rpmbuild handles xzmt fine.
+
     info "Installing dependencies locally for Electron builds..."
     rm -rf "$REPO_ROOT/node_modules" 2>/dev/null || true
     retry 2 "npm ci (native)" npm ci --force
     node scripts/generate-icon.js
 
-    # macOS packages — must run natively (DMG, universal binary, code signing)
     info "Building macOS Electron packages (DMG + zip, universal)..."
     retry 3 "macOS Electron build" \
       ./node_modules/.bin/electron-builder \
         --config.extraMetadata.version="$CHART_VERSION" \
         --mac
-  else
-    info "Skipping macOS Electron build (not on macOS)"
-  fi
 
-  # ── Linux x64: Docker for AppImage + RPM, native for deb/tar.gz ──
-  # AppImage needs Linux appimagetool (not available on macOS).
-  # RPM needs rpmbuild with xzmt support (macOS Homebrew rpmbuild lacks it).
-  # deb/tar.gz work natively via electron-builder's macOS fpm.
-  info "Building Linux x64 AppImage + RPM (container)..."
-  mkdir -p "$REPO_ROOT/node_modules"
-  retry 2 "Linux x64 AppImage + RPM (Docker)" \
-    docker_electron bash -c "
-      npm ci --ignore-scripts && \
-      ./node_modules/.bin/electron-builder \
-        --config.extraMetadata.version=${CHART_VERSION} \
-        --linux AppImage rpm \
-        --x64
-    "
-
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    # Only reinstall if node_modules was corrupted by Docker
-    if ! node -e "require('electron')" 2>/dev/null; then
-      info "Reinstalling native dependencies after Docker..."
-      rm -rf "$REPO_ROOT/node_modules" 2>/dev/null || true
-      retry 2 "npm ci (native)" npm ci --force
-    fi
-
-    info "Building Linux x64 deb + tar.gz (native)..."
-    retry 2 "Linux x64 deb/tar.gz" \
+    info "Building Linux Electron packages (AppImage, deb, tar.gz — x64 + arm64)..."
+    retry 2 "Linux Electron build (non-RPM)" \
       ./node_modules/.bin/electron-builder \
         --config.extraMetadata.version="$CHART_VERSION" \
-        --linux deb tar.gz \
-        --x64
-  fi
+        --linux AppImage deb tar.gz
 
-  # ── Linux arm64: Docker for AppImage + RPM, native for deb/tar.gz ──
-  info "Building Linux arm64 AppImage + RPM (container)..."
-  mkdir -p "$REPO_ROOT/node_modules"
-  retry 2 "Linux arm64 AppImage + RPM (Docker)" \
-    docker_electron bash -c "
-      npm ci --ignore-scripts && \
-      ./node_modules/.bin/electron-builder \
-        --config.extraMetadata.version=${CHART_VERSION} \
-        --linux AppImage rpm \
-        --arm64
-    "
-
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    if ! node -e "require('electron')" 2>/dev/null; then
-      info "Reinstalling native dependencies after Docker..."
-      rm -rf "$REPO_ROOT/node_modules" 2>/dev/null || true
-      retry 2 "npm ci (native)" npm ci --force
-    fi
-
-    info "Building Linux arm64 deb + tar.gz (native)..."
-    retry 2 "Linux arm64 deb/tar.gz" \
-      ./node_modules/.bin/electron-builder \
-        --config.extraMetadata.version="$CHART_VERSION" \
-        --linux deb tar.gz \
-        --arm64
-  fi
-
-  # ── Windows: NSIS + zip (all arches) ─────────────────────
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    info "Building Windows Electron packages (native, NSIS + zip)..."
+    info "Building Windows Electron packages (zip — x64 + arm64)..."
     retry 2 "Windows Electron build" \
       ./node_modules/.bin/electron-builder \
         --config.extraMetadata.version="$CHART_VERSION" \
-        --win
+        --win -c.win.target=zip
+
+    # ── RPM in Docker (macOS rpmbuild doesn't support xzmt) ──────────
+    # docker_electron uses an anonymous volume for node_modules
+    # (-v /project/node_modules) so the container's npm ci doesn't
+    # overwrite the host's native node_modules.
+    info "Building Linux RPM packages in Docker (x64 + arm64)..."
+    retry 2 "Linux RPM build (Docker)" \
+      docker_electron bash -c "
+        npm ci --ignore-scripts && \
+        ./node_modules/.bin/electron-builder \
+          --config.extraMetadata.version=${CHART_VERSION} \
+          --linux rpm
+      "
   else
+    # ── Linux host (CI): use Docker containers ─────────────
+    info "Skipping macOS Electron build (not on macOS)"
+
+    info "Building Linux Electron packages (container)..."
+    retry 2 "Linux Electron build (Docker)" \
+      docker_electron bash -c "
+        npm ci --ignore-scripts && \
+        ./node_modules/.bin/electron-builder \
+          --config.extraMetadata.version=${CHART_VERSION} \
+          --linux
+      "
+
     info "Building Windows Electron packages (container)..."
     retry 2 "Windows Electron build (Docker)" \
       docker_electron bash -c "
