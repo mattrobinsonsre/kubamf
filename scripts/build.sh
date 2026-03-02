@@ -83,13 +83,16 @@ build_electron() {
     retry 2 "Linux Electron build" \
       ./node_modules/.bin/electron-builder \
         --config.extraMetadata.version="$CHART_VERSION" \
-        --linux AppImage deb tar.gz
+        --linux AppImage deb tar.gz \
+        --x64 --arm64
 
     info "Building Windows Electron packages (zip — x64 + arm64)..."
     retry 2 "Windows Electron build" \
       ./node_modules/.bin/electron-builder \
         --config.extraMetadata.version="$CHART_VERSION" \
-        --win -c.win.target=zip
+        --win -c.win.target=zip \
+        --x64 --arm64
+
   else
     # ── Linux host (CI): use Docker containers ─────────────
     info "Skipping macOS Electron build (not on macOS)"
