@@ -5,9 +5,11 @@
 #
 # Web build runs inside a Docker container (docker_node).
 # Electron builds run natively on macOS (cross-compiles Linux + Windows).
-# RPM packages are built in Docker on macOS (macOS rpmbuild lacks xzmt support).
+# RPM packages use Docker (electronuserland/builder:wine) even on macOS because
+# electron-builder hardcodes --rpm-compression xzmt which macOS rpmbuild doesn't
+# support. The Docker RPM build is lightweight (just fpm packaging, no esbuild).
 # On Linux CI hosts, all Electron builds use Docker (docker_electron).
-# Docker images use Dockerfile.release (no npm install, no QEMU compilation).
+# Docker images use Dockerfile.release (no npm install, no compilation).
 #
 # All flaky operations (hdiutil, Docker, npm, buildx) use retry loops.
 
@@ -65,13 +67,18 @@ build_electron() {
     # RPM uses Docker (electronuserland/builder:wine) because
     # electron-builder's bundled fpm (v1.9.3) hardcodes --rpm-compression
     # xzmt which macOS rpmbuild doesn't support. The Docker RPM step is
-    # lightweight — it reuses the unpacked app from the native build
-    # and only runs fpm packaging (no esbuild, no QEMU compilation).
+    # lightweight — just fpm packaging, no esbuild compilation under
+    # Rosetta emulation (which OOM-kills for full electron-builder runs).
 
     info "Installing dependencies locally for Electron builds..."
     rm -rf "$REPO_ROOT/node_modules" 2>/dev/null || true
     retry 2 "npm ci (native)" npm ci --force
     node scripts/generate-icon.js
+
+    # Skip code signing identity scan — we don't sign locally.
+    # Without this, electron-builder scans the keychain and its logger
+    # can crash with RangeError if the identity list is too large.
+    export CSC_IDENTITY_AUTO_DISCOVERY=false
 
     info "Building macOS Electron packages (DMG + zip, universal)..."
     retry 3 "macOS Electron build" \
@@ -158,7 +165,7 @@ build_images_local() {
 }
 
 build_images_multiarch() {
-  info "Building multi-arch Docker image (no QEMU compilation — just COPY)..."
+  info "Building multi-arch Docker image (no compilation — just COPY)..."
 
   local tags="-t ${REGISTRY}/kubamf:${VERSION}"
   # Tag :latest only for semver tags (vX.Y.Z)
