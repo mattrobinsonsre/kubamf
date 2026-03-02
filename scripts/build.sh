@@ -80,25 +80,31 @@ build_electron() {
 
     info "Building Linux Electron packages (Docker — all formats, x64 + arm64)..."
     retry 2 "Linux Electron build (Docker)" \
-      docker_electron bash -c "
+      docker_electron bash -c '
         npm ci --ignore-scripts && \
-        npm rebuild app-builder-bin && \
+        AB=node_modules/app-builder-bin/linux/x64/app-builder && \
+        cp "$AB" "$AB.orig" && \
+        printf "#!/bin/sh\ncase \"\$1\" in \"\") exec xz;; *) exec \"\$(dirname \"\$0\")/app-builder.orig\" \"\$@\";; esac\n" > "$AB" && \
+        chmod +x "$AB" && \
         ./node_modules/.bin/electron-builder \
-          --config.extraMetadata.version=${CHART_VERSION} \
+          --config.extraMetadata.version='"${CHART_VERSION}"' \
           --linux AppImage deb rpm tar.gz \
           --x64 --arm64
-      "
+      '
 
     info "Building Windows Electron packages (Docker — NSIS + zip, x64 + arm64)..."
     retry 2 "Windows Electron build (Docker)" \
-      docker_electron bash -c "
+      docker_electron bash -c '
         npm ci --ignore-scripts && \
-        npm rebuild app-builder-bin && \
+        AB=node_modules/app-builder-bin/linux/x64/app-builder && \
+        cp "$AB" "$AB.orig" && \
+        printf "#!/bin/sh\ncase \"\$1\" in \"\") exec xz;; *) exec \"\$(dirname \"\$0\")/app-builder.orig\" \"\$@\";; esac\n" > "$AB" && \
+        chmod +x "$AB" && \
         ./node_modules/.bin/electron-builder \
-          --config.extraMetadata.version=${CHART_VERSION} \
+          --config.extraMetadata.version='"${CHART_VERSION}"' \
           --win \
           --x64 --arm64
-      "
+      '
 
   else
     # ── Linux host (CI): use Docker containers ─────────────
