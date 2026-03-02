@@ -8,9 +8,12 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${(%):-%x}")/.." && pwd)"
 
 # ── Version info ──────────────────────────────────────────
-# Refresh git index first — Docker bind mounts can desync stat cache on macOS
+# Refresh git index — Docker bind mounts can desync stat cache on macOS.
+# NOTE: --dirty is intentionally omitted. The build process itself dirties
+# the tree (npm ci writes node_modules, package-lock.json changes) so --dirty
+# would always fire during builds, producing "v0.0.0-dirty" artifacts.
 git -C "$REPO_ROOT" update-index --refresh &>/dev/null || true
-VERSION="${VERSION:-$(git -C "$REPO_ROOT" describe --tags --always --dirty 2>/dev/null || echo "dev")}"
+VERSION="${VERSION:-$(git -C "$REPO_ROOT" describe --tags --always 2>/dev/null || echo "dev")}"
 CHART_VERSION="${VERSION#v}"
 GIT_COMMIT="${GIT_COMMIT:-$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo "unknown")}"
 
