@@ -137,7 +137,7 @@
     "win": {
       "target": [
         {
-          "target": "zip",
+          "target": "nsis",
           "arch": [
             "x64",
             "arm64"
@@ -146,6 +146,7 @@
       ]
     },
     "linux": {
+      "artifactName": "${name}-${version}-${arch}.${ext}",
       "target": [
         {
           "target": "AppImage",
@@ -217,7 +218,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-Setup-${version}-universal.${ext}"
     }
   }
 }
