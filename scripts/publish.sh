@@ -131,7 +131,7 @@ publish_release() {
   for f in "$REPO_ROOT"/dist-electron/*; do
     local base="$(basename "$f")"
     case "$base" in
-      *.yml|*.yaml|*.blockmap|.DS_Store|builder-debug.yml|builder-effective-config.yaml) continue ;;
+      *.yml|*.yaml|*.blockmap|*.7z|.DS_Store|builder-debug.yml|builder-effective-config.yaml|__uninstaller*) continue ;;
       .icon-icns|mac-arm64|mac-universal|mac-universal-*-temp|linux-unpacked|linux-arm64-unpacked|win-unpacked|win-arm64-unpacked) continue ;;
       *) cp "$f" "$release_dir/" ;;
     esac

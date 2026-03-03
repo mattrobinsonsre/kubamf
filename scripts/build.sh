@@ -78,7 +78,7 @@ build_electron() {
         --config.extraMetadata.version="$CHART_VERSION" \
         --mac
 
-    info "Building Windows Electron packages (NSIS + zip, x64 + arm64)..."
+    info "Building Windows Electron packages (NSIS installer, x64 + arm64)..."
     retry 2 "Windows Electron build (native cross-compile)" \
       ./node_modules/.bin/electron-builder \
         --config.extraMetadata.version="$CHART_VERSION" \
