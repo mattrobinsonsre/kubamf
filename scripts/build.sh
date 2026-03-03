@@ -83,9 +83,10 @@ build_electron() {
       docker_electron bash -c '
         npm ci --ignore-scripts && \
         AB=node_modules/app-builder-bin/linux/x64/app-builder && \
-        cp "$AB" "$AB.orig" && \
-        printf "#!/bin/sh\ncase \"\$1\" in \"\") exec xz;; *) exec \"\$(dirname \"\$0\")/app-builder.orig\" \"\$@\";; esac\n" > "$AB" && \
-        chmod +x "$AB" && \
+        cp "$AB" "$AB.real" && \
+        WRAPPER="#!/bin/sh\ncase \"\$1\" in \"\") exec xz;; *) exec \"\$(dirname \"\$0\")/app-builder.real\" \"\$@\";; esac\n" && \
+        printf "$WRAPPER" > "$AB" && chmod +x "$AB" && \
+        printf "$WRAPPER" > "$AB.orig" && chmod +x "$AB.orig" && \
         ./node_modules/.bin/electron-builder \
           --config.extraMetadata.version='"${CHART_VERSION}"' \
           --linux AppImage deb rpm tar.gz \
@@ -97,9 +98,10 @@ build_electron() {
       docker_electron bash -c '
         npm ci --ignore-scripts && \
         AB=node_modules/app-builder-bin/linux/x64/app-builder && \
-        cp "$AB" "$AB.orig" && \
-        printf "#!/bin/sh\ncase \"\$1\" in \"\") exec xz;; *) exec \"\$(dirname \"\$0\")/app-builder.orig\" \"\$@\";; esac\n" > "$AB" && \
-        chmod +x "$AB" && \
+        cp "$AB" "$AB.real" && \
+        WRAPPER="#!/bin/sh\ncase \"\$1\" in \"\") exec xz;; *) exec \"\$(dirname \"\$0\")/app-builder.real\" \"\$@\";; esac\n" && \
+        printf "$WRAPPER" > "$AB" && chmod +x "$AB" && \
+        printf "$WRAPPER" > "$AB.orig" && chmod +x "$AB.orig" && \
         ./node_modules/.bin/electron-builder \
           --config.extraMetadata.version='"${CHART_VERSION}"' \
           --win \
