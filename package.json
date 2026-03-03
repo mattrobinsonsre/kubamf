@@ -112,7 +112,8 @@
       "output": "dist-electron"
     },
     "files": [
-      "dist/**/*",
+      "dist/frontend/**/*",
+      "dist/backend/**/*",
       "src/electron/main.js",
       "src/electron/preload.js",
       "src/backend/ipc-handlers.js",
