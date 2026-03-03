@@ -84,7 +84,7 @@ build_electron() {
         npm ci --ignore-scripts && \
         AB=node_modules/app-builder-bin/linux/x64/app-builder && \
         cp "$AB" "$AB.real" && \
-        WRAPPER="#!/bin/sh\ncase \"\$1\" in \"\") exec xz;; *) exec \"\$(dirname \"\$0\")/app-builder.real\" \"\$@\";; esac\n" && \
+        WRAPPER="#\x21/bin/sh\ncase \"\$1\" in \"\") exec xz;; *) exec \"\$(dirname \"\$0\")/app-builder.real\" \"\$@\";; esac\n" && \
         printf "$WRAPPER" > "$AB" && chmod +x "$AB" && \
         printf "$WRAPPER" > "$AB.orig" && chmod +x "$AB.orig" && \
         ./node_modules/.bin/electron-builder \
@@ -99,7 +99,7 @@ build_electron() {
         npm ci --ignore-scripts && \
         AB=node_modules/app-builder-bin/linux/x64/app-builder && \
         cp "$AB" "$AB.real" && \
-        WRAPPER="#!/bin/sh\ncase \"\$1\" in \"\") exec xz;; *) exec \"\$(dirname \"\$0\")/app-builder.real\" \"\$@\";; esac\n" && \
+        WRAPPER="#\x21/bin/sh\ncase \"\$1\" in \"\") exec xz;; *) exec \"\$(dirname \"\$0\")/app-builder.real\" \"\$@\";; esac\n" && \
         printf "$WRAPPER" > "$AB" && chmod +x "$AB" && \
         printf "$WRAPPER" > "$AB.orig" && chmod +x "$AB.orig" && \
         ./node_modules/.bin/electron-builder \
