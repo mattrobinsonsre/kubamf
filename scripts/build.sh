@@ -58,11 +58,11 @@ build_electron() {
 
   if [[ "$(uname -s)" == "Darwin" ]]; then
     # ── macOS host ───────────────────────────────────────────────────
-    # macOS: build natively (DMG creation and universal binary require macOS)
+    # macOS + Windows: build natively (DMG requires macOS; Wine under
+    #   Rosetta double-emulation fails, so NSIS runs natively too)
     # Linux: ALL formats in Docker (hard requirement — no cross-compile from mac)
-    # Windows: Docker with Wine (NSIS installer requires Wine)
 
-    info "Installing dependencies locally for macOS Electron build..."
+    info "Installing dependencies locally for macOS/Windows Electron build..."
     rm -rf "$REPO_ROOT/node_modules" 2>/dev/null || true
     retry 2 "npm ci (native)" npm ci --force
     node scripts/generate-icon.js
@@ -78,33 +78,21 @@ build_electron() {
         --config.extraMetadata.version="$CHART_VERSION" \
         --mac
 
+    info "Building Windows Electron packages (NSIS + zip, x64 + arm64)..."
+    retry 2 "Windows Electron build (native cross-compile)" \
+      ./node_modules/.bin/electron-builder \
+        --config.extraMetadata.version="$CHART_VERSION" \
+        --win \
+        --x64 --arm64
+
     info "Building Linux Electron packages (Docker — all formats, x64 + arm64)..."
     retry 2 "Linux Electron build (Docker)" \
       docker_electron bash -c '
         npm ci --ignore-scripts && \
-        AB=node_modules/app-builder-bin/linux/x64/app-builder && \
-        cp "$AB" "$AB.real" && \
-        WRAPPER="#\x21/bin/sh\ncase \"\$1\" in \"\") exec xz;; *) exec \"\$(dirname \"\$0\")/app-builder.real\" \"\$@\";; esac\n" && \
-        printf "$WRAPPER" > "$AB" && chmod +x "$AB" && \
-        printf "$WRAPPER" > "$AB.orig" && chmod +x "$AB.orig" && \
+        npm rebuild esbuild && \
         ./node_modules/.bin/electron-builder \
           --config.extraMetadata.version='"${CHART_VERSION}"' \
           --linux AppImage deb rpm tar.gz \
-          --x64 --arm64
-      '
-
-    info "Building Windows Electron packages (Docker — NSIS + zip, x64 + arm64)..."
-    retry 2 "Windows Electron build (Docker)" \
-      docker_electron bash -c '
-        npm ci --ignore-scripts && \
-        AB=node_modules/app-builder-bin/linux/x64/app-builder && \
-        cp "$AB" "$AB.real" && \
-        WRAPPER="#\x21/bin/sh\ncase \"\$1\" in \"\") exec xz;; *) exec \"\$(dirname \"\$0\")/app-builder.real\" \"\$@\";; esac\n" && \
-        printf "$WRAPPER" > "$AB" && chmod +x "$AB" && \
-        printf "$WRAPPER" > "$AB.orig" && chmod +x "$AB.orig" && \
-        ./node_modules/.bin/electron-builder \
-          --config.extraMetadata.version='"${CHART_VERSION}"' \
-          --win \
           --x64 --arm64
       '
 

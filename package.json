@@ -1,5 +1,5 @@
 {
-  "name": "kubamf-web",
+  "name": "kubamf",
   "version": "0.0.0",
   "description": "Kubernetes GUI - Web and Electron version of kubamf",
   "main": "src/electron/main.js",
@@ -126,10 +126,6 @@
         {
           "target": "dmg",
           "arch": "universal"
-        },
-        {
-          "target": "zip",
-          "arch": "universal"
         }
       ],
       "hardenedRuntime": true,
@@ -139,13 +135,6 @@
     },
     "win": {
       "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        },
         {
           "target": "zip",
           "arch": [
@@ -193,6 +182,7 @@
       "vendor": "Kubamf"
     },
     "deb": {
+      "compression": "gz",
       "depends": [
         "libgtk-3-0",
         "libnotify4",
@@ -209,6 +199,7 @@
       "priority": "optional"
     },
     "rpm": {
+      "compression": "bzip2",
       "depends": [
         "gtk3",
         "libnotify",
