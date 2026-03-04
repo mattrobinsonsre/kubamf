@@ -63,6 +63,7 @@ rbac:
     enabled: false
 
 terminationGracePeriodSeconds: 60
+preStopSleepSeconds: 5
 
 livenessProbe: {}
 readinessProbe: {}
