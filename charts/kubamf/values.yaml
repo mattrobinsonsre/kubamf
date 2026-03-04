@@ -15,6 +15,7 @@ serviceAccount:
 service:
   type: ClusterIP
   port: 3001
+  annotations: {}
 
 ingress:
   enabled: false
@@ -61,11 +62,23 @@ rbac:
   impersonation:
     enabled: false
 
+terminationGracePeriodSeconds: 60
+
+livenessProbe: {}
+readinessProbe: {}
+
 env: []
+extraEnvFrom: []
+extraVolumes: []
+extraVolumeMounts: []
+
 nodeSelector: {}
 tolerations: []
 affinity: {}
 podAnnotations: {}
+podLabels: {}
+priorityClassName: ""
+topologySpreadConstraints: []
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 1001

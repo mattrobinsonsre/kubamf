@@ -21,14 +21,25 @@ spec:
         {{- end }}
       labels:
         {{- include "kubamf.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       {{- if and .Values.global .Values.global.image .Values.global.image.pullSecrets }}
       imagePullSecrets:
         {{- toYaml .Values.global.image.pullSecrets | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "kubamf.serviceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds | default 60 }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: kubamf
           securityContext:
@@ -62,28 +73,44 @@ spec:
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - name: config
               mountPath: /app/config
               readOnly: true
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /health/live
               port: http
-            initialDelaySeconds: 10
-            periodSeconds: 20
+            initialDelaySeconds: {{ hasKey .Values.livenessProbe "initialDelaySeconds" | ternary .Values.livenessProbe.initialDelaySeconds 10 }}
+            periodSeconds: {{ hasKey .Values.livenessProbe "periodSeconds" | ternary .Values.livenessProbe.periodSeconds 20 }}
+            {{- if hasKey .Values.livenessProbe "timeoutSeconds" }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /health/ready
               port: http
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            initialDelaySeconds: {{ hasKey .Values.readinessProbe "initialDelaySeconds" | ternary .Values.readinessProbe.initialDelaySeconds 5 }}
+            periodSeconds: {{ hasKey .Values.readinessProbe "periodSeconds" | ternary .Values.readinessProbe.periodSeconds 10 }}
+            {{- if hasKey .Values.readinessProbe "timeoutSeconds" }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
         - name: config
           configMap:
             name: {{ include "kubamf.fullname" . }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
